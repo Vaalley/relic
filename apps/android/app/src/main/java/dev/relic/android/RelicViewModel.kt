@@ -68,27 +68,51 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Re-open the setup screen so the library folder can be changed. */
+    fun editLibrary() {
+        hasLibrary = false
+    }
+
     fun scanLibrary() {
         if (scanning) return
+        val root = libraryPath.trim().trimEnd('/')
+        libraryPath = root
         scanning = true
         status = null
-        prefs.edit().putString("library_path", libraryPath).apply()
-        hasLibrary = true
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val root = libraryPath
-                val libId = engine.addLibrary(root, File(root).name.ifEmpty { "library" })
+                val rootDir = File(root)
+                if (!rootDir.isDirectory) {
+                    withContext(Dispatchers.Main) { status = "Folder not found: $root" }
+                    return@launch
+                }
+                prefs.edit().putString("library_path", root).apply()
+                withContext(Dispatchers.Main) { hasLibrary = true }
+
+                val warnings = mutableListOf<String>()
+                val libId = engine.addLibrary(root, rootDir.name.ifEmpty { "library" })
                 val summary = engine.scan(libId, object : EventListener {
                     override fun onScanProgress(done: ULong, total: ULong) {
                         viewModelScope.launch { progress = done to total }
                     }
-                    override fun onWarning(code: String, context: String) {}
+                    override fun onWarning(code: String, context: String) {
+                        synchronized(warnings) { warnings.add("$code: $context") }
+                    }
                 })
                 engine.importGamelists(libId)
                 engine.refreshMedia(libId)
-                withContext(Dispatchers.Main) {
-                    status = "added ${summary.added}, removed ${summary.removed}, unchanged ${summary.unchanged}"
+                val message = buildString {
+                    append("added ${summary.added}, removed ${summary.removed}, unchanged ${summary.unchanged}")
+                    if (summary.added == 0uL && summary.unchanged == 0uL) {
+                        append("\n").append(emptyScanHint(rootDir))
+                    }
+                    synchronized(warnings) {
+                        warnings.filterNot { it.startsWith("scan.no_system_dirs") }
+                            .take(3)
+                            .forEach { append("\nwarning — ").append(it) }
+                    }
                 }
+                withContext(Dispatchers.Main) { status = message }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { status = "scan failed: ${e.message}" }
             } finally {
@@ -98,6 +122,23 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 refresh()
             }
+        }
+    }
+
+    /** Why a scan came back empty, in terms the user can act on. */
+    private fun emptyScanHint(rootDir: File): String {
+        val subdirs = rootDir.listFiles { f: File -> f.isDirectory }?.map { it.name } ?: emptyList()
+        val slugs = engine.listSystems().map { it.slug.lowercase() }.toSet()
+        val matched = subdirs.filter { it.lowercase() in slugs }
+        return when {
+            subdirs.isEmpty() ->
+                "No subfolders found — Relic expects one folder per system, e.g. ${rootDir.path}/snes"
+            matched.isEmpty() ->
+                "No folder here matches a system name. Found: ${subdirs.joinToString(", ")}. " +
+                    "Rename them after systems (snes, nes, gba, psx, …)"
+            else ->
+                "Folder(s) ${matched.joinToString(", ")} matched a system but held no ROM files " +
+                    "with recognized extensions"
         }
     }
 

@@ -2,7 +2,7 @@
 //!
 //! Phase-1 starting point: synchronous, incremental by (size, mtime) quick
 //! key, systems resolved by the ES-style convention of per-system subfolders
-//! (`<root>/<slug>/...`). Archive-aware: a `.zip` whose system has real ROM
+//! (`<root>/<slug>/...`, folder names matched case-insensitively). Archive-aware: a `.zip` whose system has real ROM
 //! extensions (see `archive::should_enumerate`) is enumerated without
 //! extraction and can expand into one game per inner entry (`archive.rs`).
 //! Still to come per the plan: background thread pool, multi-disc grouping,
@@ -11,7 +11,7 @@
 pub mod archive;
 pub mod hash;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
@@ -59,14 +59,46 @@ pub fn scan_library(
     // real ROM extensions is enumerated here (no extraction) and can yield
     // one item per matching inner entry.
     let mut items: Vec<Item> = Vec::new();
-    for (idx, sys) in systems.iter().enumerate() {
-        let sys_root = root.join(&sys.slug);
-        if !sys_root.is_dir() {
+
+    // System subfolders are matched case-insensitively (users name folders
+    // "SNES" as often as "snes"; Android's storage is case-sensitive, so a
+    // plain join would silently skip them). An unreadable/missing root is a
+    // hard error rather than an empty walk — an empty walk would look like
+    // "library emptied" and delete every indexed row below.
+    let mut dirs_by_lower: HashMap<String, std::path::PathBuf> = HashMap::new();
+    let mut subdir_names: Vec<String> = Vec::new();
+    let entries = std::fs::read_dir(root).map_err(|e| crate::Error::Io {
+        path: root.to_path_buf(),
+        source: e,
+    })?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                sink(Event::Warning {
+                    code: "scan.unreadable".into(),
+                    context: e.to_string(),
+                });
+                continue;
+            }
+        };
+        if !entry.path().is_dir() {
             continue;
         }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        dirs_by_lower.insert(name.to_ascii_lowercase(), entry.path());
+        subdir_names.push(name);
+    }
+
+    let mut matched_any = false;
+    for (idx, sys) in systems.iter().enumerate() {
+        let Some(sys_root) = dirs_by_lower.get(&sys.slug.to_ascii_lowercase()) else {
+            continue;
+        };
+        matched_any = true;
         let enumerate_zips = archive::should_enumerate(&sys.extensions);
         let rom_exts = archive::rom_extensions(&sys.extensions);
-        for entry in WalkDir::new(&sys_root).follow_links(false) {
+        for entry in WalkDir::new(sys_root).follow_links(false) {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
@@ -133,6 +165,21 @@ pub fn scan_library(
                 });
             }
         }
+    }
+
+    if !matched_any {
+        sink(Event::Warning {
+            code: "scan.no_system_dirs".into(),
+            context: if subdir_names.is_empty() {
+                format!("no subfolders under {}", root.display())
+            } else {
+                format!(
+                    "no subfolder of {} matches a system slug; found: {}",
+                    root.display(),
+                    subdir_names.join(", ")
+                )
+            },
+        });
     }
 
     let total = items.len() as u64;
@@ -395,6 +442,65 @@ mod tests {
         .unwrap()
         .map(|r| r.unwrap())
         .collect()
+    }
+
+    #[test]
+    fn system_folder_matches_case_insensitively() {
+        let dir = tempfile::tempdir().unwrap();
+        let snes_dir = dir.path().join("SNES");
+        fs::create_dir_all(&snes_dir).unwrap();
+        fs::write(snes_dir.join("Game.sfc"), b"data").unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let defs = vec![snes_system()];
+        let library_id = seed_library(&mut db, dir.path(), &defs);
+
+        let summary = scan_library(&mut db, library_id, dir.path(), &defs, &mut |_| {}).unwrap();
+        assert_eq!(summary.added, 1);
+
+        let rows = indexed_rows(&db, library_id);
+        // rel_path keeps the on-disk casing so launches resolve the real file.
+        assert_eq!(rows[0].0, "SNES/Game.sfc");
+    }
+
+    #[test]
+    fn missing_root_is_an_error_not_a_wipe() {
+        let dir = tempfile::tempdir().unwrap();
+        let snes_dir = dir.path().join("snes");
+        fs::create_dir_all(&snes_dir).unwrap();
+        fs::write(snes_dir.join("Game.sfc"), b"data").unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let defs = vec![snes_system()];
+        let library_id = seed_library(&mut db, dir.path(), &defs);
+        scan_library(&mut db, library_id, dir.path(), &defs, &mut |_| {}).unwrap();
+        assert_eq!(indexed_rows(&db, library_id).len(), 1);
+
+        // Root gone (unmounted SD card, typo'd path): the scan must fail
+        // loudly and leave the index untouched, not report "0 games".
+        let gone = dir.path().join("nope");
+        assert!(scan_library(&mut db, library_id, &gone, &defs, &mut |_| {}).is_err());
+        assert_eq!(indexed_rows(&db, library_id).len(), 1);
+    }
+
+    #[test]
+    fn no_matching_system_dirs_emits_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Games")).unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let defs = vec![snes_system()];
+        let library_id = seed_library(&mut db, dir.path(), &defs);
+
+        let mut events = Vec::new();
+        scan_library(&mut db, library_id, dir.path(), &defs, &mut |e| {
+            events.push(e)
+        })
+        .unwrap();
+        assert!(events.iter().any(|e| matches!(
+            e,
+            Event::Warning { code, context } if code == "scan.no_system_dirs" && context.contains("Games")
+        )));
     }
 
     #[test]

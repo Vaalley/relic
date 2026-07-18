@@ -4,9 +4,11 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -42,6 +47,42 @@ import java.io.File
 class MainActivity : ComponentActivity() {
 
     private val vm: RelicViewModel by viewModels()
+
+    // Compose state, not a plain call: coming back from the Settings grant
+    // screen must re-enable the Scan button without any other recomposition.
+    private var hasAccess by mutableStateOf(false)
+
+    private val pickFolder =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val path = treeUriToPath(uri)
+            if (path != null) {
+                vm.libraryPath = path
+            } else {
+                vm.status = "Couldn't turn that folder into a file path — type it manually"
+            }
+        }
+
+    /**
+     * SAF tree URI → plain file path, valid while the app holds all-files
+     * access. "primary:ROMs" → /storage/emulated/0/ROMs; "1234-ABCD:ROMs"
+     * (SD card) → /storage/1234-ABCD/ROMs. Null if the provider isn't plain
+     * external storage or the result doesn't exist on disk.
+     */
+    private fun treeUriToPath(uri: Uri): String? {
+        if (uri.authority != "com.android.externalstorage.documents") return null
+        val docId = DocumentsContract.getTreeDocumentId(uri)
+        val volume = docId.substringBefore(':')
+        val rel = docId.substringAfter(':', "")
+        val base =
+            if (volume.equals("primary", ignoreCase = true)) {
+                Environment.getExternalStorageDirectory().absolutePath
+            } else {
+                "/storage/$volume"
+            }
+        val path = if (rel.isEmpty()) base else "$base/$rel"
+        return path.takeIf { File(it).isDirectory }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,10 +99,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        hasAccess = Environment.isExternalStorageManager()
         if (vm.hasLibrary) vm.refresh()
     }
-
-    private fun hasAllFilesAccess(): Boolean = Environment.isExternalStorageManager()
 
     private fun requestAllFilesAccess() {
         startActivity(
@@ -83,7 +123,10 @@ class MainActivity : ComponentActivity() {
                 label = { Text("ROM folder") },
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (!hasAllFilesAccess()) {
+            OutlinedButton(onClick = { pickFolder.launch(null) }) {
+                Text("Browse…")
+            }
+            if (!hasAccess) {
                 OutlinedButton(onClick = { requestAllFilesAccess() }) {
                     Text("Grant storage access")
                 }
@@ -92,7 +135,7 @@ class MainActivity : ComponentActivity() {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Button(onClick = { vm.scanLibrary() }, enabled = hasAllFilesAccess() && !vm.scanning) {
+            Button(onClick = { vm.scanLibrary() }, enabled = hasAccess && !vm.scanning) {
                 Text(if (vm.scanning) "Scanning…" else "Scan library")
             }
             ScanStatus()
@@ -122,6 +165,9 @@ class MainActivity : ComponentActivity() {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { vm.scanLibrary() }, enabled = !vm.scanning) {
                     Text(if (vm.scanning) "Scanning…" else "Rescan")
+                }
+                OutlinedButton(onClick = { vm.editLibrary() }, enabled = !vm.scanning) {
+                    Text("Change folder")
                 }
             }
             ScanStatus()
