@@ -40,6 +40,16 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     var status by mutableStateOf<String?>(null)
     var hasLibrary by mutableStateOf(prefs.contains("library_path"))
         private set
+    var search by mutableStateOf("")
+        private set
+    var favoritesOnly by mutableStateOf(false)
+        private set
+    var selectedGame by mutableStateOf<GameInfo?>(null)
+        private set
+
+    /** Games as the grid should show them (favorites filter is client-side). */
+    val visibleGames: List<GameInfo>
+        get() = if (favoritesOnly) games.filter { it.favorite } else games
 
     fun boxartPath(gameId: Long): String? = engine.boxartPath(gameId)
 
@@ -50,10 +60,40 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
         refreshGames()
     }
 
+    fun setSearchQuery(query: String) {
+        search = query
+        refreshGames()
+    }
+
+    fun toggleFavoritesOnly() {
+        favoritesOnly = !favoritesOnly
+    }
+
+    fun openGame(game: GameInfo) {
+        selectedGame = game
+    }
+
+    fun closeGame() {
+        selectedGame = null
+    }
+
+    fun toggleFavorite(game: GameInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            engine.setFavorite(game.id, !game.favorite)
+            val g = engine.queryGames(selectedSystem, search.ifBlank { null })
+            withContext(Dispatchers.Main) {
+                games = g
+                if (selectedGame?.id == game.id) {
+                    selectedGame = game.copy(favorite = !game.favorite)
+                }
+            }
+        }
+    }
+
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             val sys = engine.listSystems().filter { it.gameCount > 0 }
-            val g = engine.queryGames(selectedSystem, null)
+            val g = engine.queryGames(selectedSystem, search.ifBlank { null })
             withContext(Dispatchers.Main) {
                 systems = sys
                 games = g
@@ -63,22 +103,36 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun refreshGames() {
         viewModelScope.launch(Dispatchers.IO) {
-            val g = engine.queryGames(selectedSystem, null)
+            val g = engine.queryGames(selectedSystem, search.ifBlank { null })
             withContext(Dispatchers.Main) { games = g }
         }
     }
+
+    /**
+     * Incremental rescan on activity resume (e.g. returning from a game or a
+     * file manager). Quiet: no status noise unless the library changed.
+     * Debounced so rapid app switches don't queue scans.
+     */
+    fun rescanOnResume() {
+        val now = System.currentTimeMillis()
+        if (scanning || !hasLibrary || now - lastAutoRescan < 15_000) return
+        lastAutoRescan = now
+        scanLibrary(quiet = true)
+    }
+
+    private var lastAutoRescan = 0L
 
     /** Re-open the setup screen so the library folder can be changed. */
     fun editLibrary() {
         hasLibrary = false
     }
 
-    fun scanLibrary() {
+    fun scanLibrary(quiet: Boolean = false) {
         if (scanning) return
         val root = libraryPath.trim().trimEnd('/')
         libraryPath = root
         scanning = true
-        status = null
+        if (!quiet) status = null
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val rootDir = File(root)
@@ -112,7 +166,10 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
                             .forEach { append("\nwarning — ").append(it) }
                     }
                 }
-                withContext(Dispatchers.Main) { status = message }
+                // A quiet (auto) rescan only speaks up when something changed.
+                if (!quiet || summary.added > 0uL || summary.removed > 0uL) {
+                    withContext(Dispatchers.Main) { status = message }
+                }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { status = "scan failed: ${e.message}" }
             } finally {

@@ -1,8 +1,10 @@
 # Relic — Android shell (alpha)
 
 Kotlin + Jetpack Compose over the UniFFI bindings (`ffi/uniffi`), running the
-same Rust engine as the desktop CLI. Status: **sideload alpha** — browse and
-launch works; HOME-launcher role, controller-first focus, and the data-driven
+same Rust engine as the desktop CLI. Status: **sideload alpha** — browse,
+game detail, favorites, search, and launch work; controller navigation is in
+(d-pad moves focus, A confirms, B backs out) and the library rescans
+incrementally on resume. HOME-launcher role and the data-driven
 intent-template engine (docs/android-intents.md) are still ahead.
 
 ## Build
