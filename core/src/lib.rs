@@ -9,6 +9,7 @@
 //! - `scan`     filesystem crawl → index pipeline
 //! - `metadata` gamelist.xml / DAT parsing and matching (Phase 1)
 //! - `media`    thumbnail cache (Phase 1)
+//! - `intents`  Android intent-template registry + validator (Phase 3)
 //! - `launch`   emulator profiles and argument templating (Phase 1)
 //! - `events`   delta events streamed to shells
 //! - `stats`    playtime aggregation: recently/most played, totals (Phase 1)
@@ -17,6 +18,7 @@
 pub mod api;
 pub mod db;
 pub mod events;
+pub mod intents;
 pub mod launch;
 pub mod media;
 pub mod metadata;

@@ -3,9 +3,12 @@
 > Companion to `PLAN.md` §4.5 and `apps/android/README.md`. Spec for the
 > per-emulator intent templates the Android shell uses to launch games.
 > Status: **Draft, Phase 3** — authoritative once the Android shell's intent
-> resolver ships in Phase 3. Until then the templates under
-> `core/data/intents/` are pure data: not compiled into the build, not yet
-> loaded by any code path. Fields may move or rename until the resolver lands.
+> resolver ships in Phase 3. The templates under `core/data/intents/` are now
+> parsed and validated at build time by `relic-core::intents` (embedded via
+> `include_str!`, same pattern as `core/data/systems/`) and checkable with
+> `relic-cli intent-validate`, but no shell yet *fires* an `Intent` from them
+> — `apps/android` still hardcodes RetroArch (`RetroArchLauncher.kt`). Fields
+> may move or rename until the resolver lands.
 
 ---
 
@@ -19,8 +22,8 @@ consumers:
   the resulting explicit `Intent`.
 - `core/data/intents/*.toml` — the built-in templates, community-updateable as
   data files without an app release (PLAN.md §4.5).
-- A future `relic-cli intent validate` (Phase 3) — the validator that enforces
-  the rules in §6.
+- `relic-cli intent-validate` (`core/src/intents/mod.rs`) — the validator that
+  enforces the rules in §6, and `relic-cli intents` to list the built-in set.
 
 The templates shipped here are the canonical examples and the seed set called
 for in `PLAN.md` §4.5, since expanded past the original five (RetroArch,
@@ -29,13 +32,15 @@ by the research digest at `docs/android-standalone-emulators.md`. Where this
 spec and a shipped template disagree, the spec is wrong until updated; the
 template is the source of truth for the current provisional shape.
 
-These files are **data, not code**. They are not yet `include_str!`-ed into any
-crate, not referenced by `Cargo.toml`, and not loaded by `relic-core`. Adding a
-new template or editing an existing one does not require a Rust change or a
-rebuild of `core` — only the Android shell reads them at launch time, and only
-once Phase 3 wires the resolver. Until then they are proposals: best-effort
-captures of each emulator's real Android intent interface, marked
-`# UNVERIFIED - needs device testing` where the interface is uncertain.
+These files are **data**: adding a template means adding a file plus one
+`include_str!` line in `core/src/intents/mod.rs`'s `BUILTIN` array (mirroring
+`core/data/systems/`'s `BUILTIN`), not a schema or engine change. `relic-core`
+parses and validates every shipped template in its own test suite
+(`cargo test -p relic-core intents::`), but nothing yet *acts* on them at
+runtime — no shell builds or fires an `Intent` from a template. Until the
+Android resolver lands, they remain best-effort captures of each emulator's
+real Android intent interface, marked `# UNVERIFIED - needs device testing`
+where the interface is uncertain.
 
 ---
 
@@ -270,8 +275,9 @@ references.
 
 ## 6. Validation rules
 
-A future `relic-cli intent validate` (Phase 3) will enforce, at load time and
-in CI:
+`relic-cli intent-validate` (`core/src/intents/mod.rs`, `fn validate`)
+enforces, and `cargo test -p relic-core intents::` checks against every
+shipped template:
 
 1. `id` equals the filename stem.
 2. `package` and `activity` are non-empty and look like Android component
@@ -295,7 +301,10 @@ in CI:
 9. Every `per_system` key matches a slug listed in `core/data/systems/`.
 10. `min_version_code`, if present, is a non-negative integer.
 
-Until the validator ships, contributors should self-check against this list.
+Rule 3 above is stricter in the implementation than "known vendor prefix"
+suggests: today it requires the literal `android.intent.action.` prefix. No
+shipped template uses a vendor action, so this hasn't needed loosening yet —
+if one does, extend `validate()` alongside the template.
 
 ---
 
@@ -316,7 +325,9 @@ upstream rename:
    silently guess. A shipped template with an `UNVERIFIED` marker is
    acceptable; a shipped template with a guessed-but-unmarked component is not.
 3. **Add the file** at `core/data/intents/<id>.toml`. The filename stem is the
-   `id`.
+   `id`. Register it in the `BUILTIN` array in `core/src/intents/mod.rs` (one
+   `include_str!` line) so it's parsed and validated by
+   `cargo test -p relic-core` and visible to `relic-cli intents`.
 4. **Minimize extras.** Only carry what the emulator needs to boot the ROM.
    Prefer `data_mode = "data"` (URI in `Intent.data`) over an extra when the
    emulator accepts both — it's the more standard interface and the one
@@ -324,9 +335,11 @@ upstream rename:
 5. **Never grant write.** Do not add `FLAG_GRANT_WRITE_URI_PERMISSION`. If an
    emulator genuinely cannot function without write access to the ROM, open an
    issue first — that's a format extension, not a template edit.
-6. **Test.** Once Phase 3 lands, run `relic-cli intent validate
-   core/data/intents/<id>.toml` and launch a fixture ROM against the target
-   emulator from a debug build of the Android shell. Until then, manual
+6. **Test.** Run `relic-cli intent-validate core/data/intents/<id>.toml` (or
+   `intent-validate` with no path to check every built-in template). The
+   resolver that fires a real `Intent` from a template is still ahead
+   (`apps/android` hardcodes RetroArch today), so a device launch isn't yet
+   possible through Relic itself for other emulators — until then, manual
    `adb am start` against the resolved component is the best available check.
 7. **Document per-system quirks in `per_system`.** If the emulator needs a
    different activity or extra set for one system, put it in `per_system`

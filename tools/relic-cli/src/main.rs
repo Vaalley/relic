@@ -10,7 +10,9 @@ use clap::{Parser, Subcommand};
 
 use relic_core::api::Engine;
 use relic_core::events::Event;
+use relic_core::intents;
 use relic_core::stats::GameStats;
+use relic_core::systems::builtin_systems;
 
 #[derive(Parser)]
 #[command(name = "relic", about = "Relic headless CLI: scan, query, launch")]
@@ -132,6 +134,13 @@ enum Command {
         #[arg(long, default_value = "relic.db")]
         db: PathBuf,
     },
+    /// List the built-in Android intent templates (core/data/intents/).
+    Intents,
+    /// Validate Android intent template(s) against docs/android-intents.md §6.
+    IntentValidate {
+        /// Validate this TOML file instead of the built-in set.
+        path: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -172,6 +181,8 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::Recent { db, limit } => cmd_recent(&db, limit),
         Command::MostPlayed { db, limit } => cmd_most_played(&db, limit),
         Command::Stats { db } => cmd_stats(&db),
+        Command::Intents => cmd_intents(),
+        Command::IntentValidate { path } => cmd_intent_validate(path.as_deref()),
     }
 }
 
@@ -380,6 +391,71 @@ fn cmd_stats(db: &Path) -> Result<(), Box<dyn Error>> {
     let engine = Engine::open(db)?;
     let (sessions, total_time) = engine.play_totals()?;
     println!("sessions={sessions} total_time={total_time}s");
+    Ok(())
+}
+
+fn cmd_intents() -> Result<(), Box<dyn Error>> {
+    println!(
+        "{:<18} {:<24} {:<10} PACKAGE",
+        "ID", "DISPLAY NAME", "DATA MODE"
+    );
+    for (stem, t) in intents::builtin_intents()? {
+        println!(
+            "{:<18} {:<24} {:<10} {}",
+            stem,
+            t.display_name,
+            format!("{:?}", t.data_mode).to_lowercase(),
+            t.package
+        );
+    }
+    Ok(())
+}
+
+fn cmd_intent_validate(path: Option<&Path>) -> Result<(), Box<dyn Error>> {
+    let slugs: Vec<String> = builtin_systems()?.into_iter().map(|s| s.slug).collect();
+    let mut any_failed = false;
+
+    let targets: Vec<(String, String)> = match path {
+        Some(p) => {
+            let stem = p
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default()
+                .to_string();
+            let src = std::fs::read_to_string(p)?;
+            vec![(stem, src)]
+        }
+        None => intents::builtin_sources()
+            .iter()
+            .map(|(stem, src)| (stem.to_string(), src.to_string()))
+            .collect(),
+    };
+
+    for (stem, src) in targets {
+        match intents::parse_intent(&src) {
+            Ok(template) => {
+                let errors = intents::validate(&template, &stem, &slugs);
+                if errors.is_empty() {
+                    println!("OK    {stem}");
+                } else {
+                    any_failed = true;
+                    println!("FAIL  {stem}");
+                    for e in errors {
+                        println!("        - {e}");
+                    }
+                }
+            }
+            Err(e) => {
+                any_failed = true;
+                println!("FAIL  {stem}");
+                println!("        - {e}");
+            }
+        }
+    }
+
+    if any_failed {
+        std::process::exit(1);
+    }
     Ok(())
 }
 

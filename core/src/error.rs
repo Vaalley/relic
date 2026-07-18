@@ -16,6 +16,9 @@ pub enum Error {
     #[error("invalid system definition {name}: {reason}")]
     SystemDef { name: String, reason: String },
 
+    #[error("invalid intent template {id}: {reason}")]
+    IntentDef { id: String, reason: String },
+
     #[error("unknown system slug: {0}")]
     UnknownSystem(String),
 
