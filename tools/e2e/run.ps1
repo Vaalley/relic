@@ -191,6 +191,12 @@ try {
 
     # (10) 'relic doctor --db DB' exits 0 and contains OK
     Run-Step -Name "(10) Run doctor check" -ArgsList @("doctor", "--db", $DbPath) -Contains @("OK")
+
+    # (11) 'relic intents' lists the built-in Android intent templates
+    Run-Step -Name "(11) List intent templates" -ArgsList @("intents") -Contains @("retroarch", "duckstation")
+
+    # (12) 'relic intent-validate' validates every shipped template clean
+    Run-Step -Name "(12) Validate intent templates" -ArgsList @("intent-validate") -Contains @("OK    retroarch") -NotContains @("FAIL")
 }
 finally {
     if (Test-Path $ScratchDir) {
