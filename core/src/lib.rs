@@ -11,6 +11,7 @@
 //! - `media`    thumbnail cache (Phase 1)
 //! - `launch`   emulator profiles and argument templating (Phase 1)
 //! - `events`   delta events streamed to shells
+//! - `stats`    playtime aggregation: recently/most played, totals (Phase 1)
 //! - `api`      the single public facade exposed over FFI
 
 pub mod api;
@@ -20,6 +21,7 @@ pub mod launch;
 pub mod media;
 pub mod metadata;
 pub mod scan;
+pub mod stats;
 pub mod systems;
 
 mod error;

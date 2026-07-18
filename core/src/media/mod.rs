@@ -126,7 +126,10 @@ impl DirIndex {
         candidates
             .iter()
             .filter_map(|name| {
-                let ext = Path::new(name).extension()?.to_string_lossy().to_lowercase();
+                let ext = Path::new(name)
+                    .extension()?
+                    .to_string_lossy()
+                    .to_lowercase();
                 let rank = quality.iter().position(|q| *q == ext)?;
                 Some((rank, name.clone()))
             })
@@ -315,7 +318,10 @@ pub(crate) fn refresh_media(
             if let (Some((hash, sp)), Some(cache)) = (&existing, cache_dir) {
                 if *sp == source_path
                     && (!d.kind.is_image()
-                        || cache.join(&hash[..2.min(hash.len())]).join(format!("{hash}.png")).is_file())
+                        || cache
+                            .join(&hash[..2.min(hash.len())])
+                            .join(format!("{hash}.png"))
+                            .is_file())
                 {
                     stats.discovered += 1;
                     continue;
@@ -403,7 +409,10 @@ mod tests {
         write_png(&snes.join("media/covers/game a.png"), 8, 8);
         let mut idx = DirIndex::default();
         let d = discover_for_rom(root, "snes", "snes/Game A.sfc", &HashMap::new(), &mut idx);
-        assert_eq!(d[0].source, "es_de", "case-insensitive es_de beats same_folder");
+        assert_eq!(
+            d[0].source, "es_de",
+            "case-insensitive es_de beats same_folder"
+        );
 
         write_png(&snes.join(".relic-media/boxart/GAME A.webp"), 8, 8);
         let mut idx = DirIndex::default();

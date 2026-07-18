@@ -327,6 +327,23 @@ impl Engine {
     pub fn integrity_check(&self) -> Result<bool> {
         self.db.integrity_check()
     }
+
+    /// Games with at least one completed play session, most recently played
+    /// first (PLAN.md §5 "Recently played / most played").
+    pub fn recently_played(&self, limit: usize) -> Result<Vec<crate::stats::GameStats>> {
+        crate::stats::recently_played(&self.db, limit)
+    }
+
+    /// Games with at least one completed play session, most total playtime
+    /// first (PLAN.md §5 "Recently played / most played").
+    pub fn most_played(&self, limit: usize) -> Result<Vec<crate::stats::GameStats>> {
+        crate::stats::most_played(&self.db, limit)
+    }
+
+    /// `(completed session count, total seconds played)` across the library.
+    pub fn play_totals(&self) -> Result<(i64, i64)> {
+        crate::stats::totals(&self.db)
+    }
 }
 
 #[cfg(test)]

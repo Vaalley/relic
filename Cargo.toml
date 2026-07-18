@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "core",
     "ffi/capi",
+    "ffi/uniffi",
     "modules/scraper",
     "modules/retroachievements",
     "modules/sync",

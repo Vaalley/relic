@@ -10,6 +10,7 @@ use clap::{Parser, Subcommand};
 
 use relic_core::api::Engine;
 use relic_core::events::Event;
+use relic_core::stats::GameStats;
 
 #[derive(Parser)]
 #[command(name = "relic", about = "Relic headless CLI: scan, query, launch")]
@@ -112,6 +113,25 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// List the most recently played games.
+    Recent {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    /// List games ordered by total playtime.
+    MostPlayed {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    /// Show library-wide play totals (sessions and time played).
+    Stats {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+    },
 }
 
 fn main() {
@@ -149,6 +169,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             game_id,
             dry_run,
         } => cmd_launch(&db, game_id, dry_run),
+        Command::Recent { db, limit } => cmd_recent(&db, limit),
+        Command::MostPlayed { db, limit } => cmd_most_played(&db, limit),
+        Command::Stats { db } => cmd_stats(&db),
     }
 }
 
@@ -241,7 +264,10 @@ fn cmd_media(db: &Path, game_id: i64) -> Result<(), Box<dyn Error>> {
                 .map(|p| p.display().to_string())
                 .unwrap_or_default()
         };
-        println!("{:<12} {:<14} {} {}", m.kind, m.source, m.source_path, thumb);
+        println!(
+            "{:<12} {:<14} {} {}",
+            m.kind, m.source, m.source_path, thumb
+        );
     }
     Ok(())
 }
@@ -319,6 +345,41 @@ fn cmd_launch(db: &Path, game_id: i64, dry_run: bool) -> Result<(), Box<dyn Erro
         }
     })?;
     println!("recorded play session #{session}");
+    Ok(())
+}
+
+fn cmd_recent(db: &Path, limit: usize) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    for g in engine.recently_played(limit)? {
+        print_game_stats(&g);
+    }
+    Ok(())
+}
+
+fn cmd_most_played(db: &Path, limit: usize) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    for g in engine.most_played(limit)? {
+        print_game_stats(&g);
+    }
+    Ok(())
+}
+
+fn print_game_stats(g: &GameStats) {
+    let minutes = g.total_seconds / 60;
+    let last = g
+        .last_played_at
+        .map(|t| t.to_string())
+        .unwrap_or_else(|| "-".to_string());
+    println!(
+        "{} ({}) — {}x, {}m total, last {}",
+        g.name, g.system_slug, g.play_count, minutes, last
+    );
+}
+
+fn cmd_stats(db: &Path) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    let (sessions, total_time) = engine.play_totals()?;
+    println!("sessions={sessions} total_time={total_time}s");
     Ok(())
 }
 
