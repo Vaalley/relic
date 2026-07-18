@@ -71,6 +71,15 @@ impl Engine {
         crate::version()
     }
 
+    /// Suggested libretro core for a system (registry `default_core`), used
+    /// by shells to fill the RetroArch LIBRETRO intent extra / {core} token.
+    pub fn system_default_core(&self, slug: &str) -> Option<String> {
+        self.systems
+            .iter()
+            .find(|s| s.slug == slug)
+            .and_then(|s| s.default_core.clone())
+    }
+
     /// Register a library root (idempotent on the path), returning its id.
     /// The root is stored absolute so launch commands work regardless of the
     /// working directory the shell/CLI later runs from.

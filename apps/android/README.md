@@ -1,27 +1,39 @@
-# Relic — Android shell
+# Relic — Android shell (alpha)
 
-Not yet scaffolded. Per `PLAN.md` (Phase 3, §9), this is a native launcher
-built with **Kotlin + Jetpack Compose** consuming `relic-core` through the
-UniFFI bindings generated in `ffi/uniffi/`.
+Kotlin + Jetpack Compose over the UniFFI bindings (`ffi/uniffi`), running the
+same Rust engine as the desktop CLI. Status: **sideload alpha** — browse and
+launch works; HOME-launcher role, controller-first focus, and the data-driven
+intent-template engine (docs/android-intents.md) are still ahead.
 
-The Gradle project is deliberately not created yet — an empty Gradle tree
-would rot (dependency drift, stale AGP/Kotlin versions, broken CI) long
-before Phase 3 starts. It gets scaffolded when Phase 3 begins, against a
-core that already has a stable UniFFI surface to bind to.
+## Build
 
-## Planned key pieces
+Prereqs: Android SDK (platform 36) + NDK, JDK 17+, Rust with the
+`aarch64-linux-android` target, `cargo install cargo-ndk`.
 
-- **SAF folder access** — libraries are indexed once into the app-private
-  SQLite cache; `content://` tree URIs are only touched again at scan time
-  and at launch time (scoped-storage friction mitigation, PLAN.md §10).
-- **Intent-template launching** — explicit `Intent`s built from per-emulator
-  templates (component, extras, data URI, flags), `FLAG_GRANT_READ_URI_PERMISSION`
-  granted per launch; built-in templates for RetroArch and common standalones
-  (Dolphin, PPSSPP, DraStic-likes, Yaba Sanshiro, etc.), community-extendable
-  as data files.
-- **HOME launcher role** — Relic can register as, and act as, the device's
-  default Home screen on handhelds (target: 1.0).
-- **Controller-first focus handling** — physical controller input drives UI
-  focus and navigation directly; no dependency on touch.
+```powershell
+pwsh -File tools/android/build-apk.ps1          # debug APK
+pwsh -File tools/android/build-apk.ps1 -Release
+```
 
-See `PLAN.md` §2.2, §4.5, and Phase 3 for the full scope and exit criteria.
+The script cross-compiles `relic-ffi` (arm64 + x86_64), regenerates the Kotlin
+bindings, and runs Gradle. Output: `apps/android/app/build/outputs/apk/`.
+
+## Install on a handheld (AYN Thor & friends)
+
+1. Enable Developer options + USB debugging on the device.
+2. `adb install -r app-debug.apk`
+3. Put ROMs in per-system folders on the device, e.g. `/storage/emulated/0/ROMs/snes/…`
+   (slugs listed in `core/data/systems/`).
+4. Open Relic → grant "All files access" → Scan.
+5. Launching needs RetroArch (`com.retroarch` or `com.retroarch.aarch64`)
+   installed with its cores downloaded; Relic passes the system's default core
+   from the registry.
+
+## Alpha shortcuts (tracked, will change)
+
+- **All-files access** instead of SAF content-URI translation (ES-DE precedent
+  for sideloaded launchers). The SAF flow per docs/android-intents.md replaces
+  this before any store distribution.
+- **RetroArch launch is hardcoded** (`RetroArchLauncher.kt`) rather than driven
+  by `core/data/intents/*.toml`; the template engine lands with Phase 3 proper.
+- Touch-first UI; controller focus navigation is the next shell milestone.

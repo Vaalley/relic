@@ -159,6 +159,24 @@ impl RelicEngine {
         self.with_engine(|e| e.set_favorite(game_id, favorite))
     }
 
+    pub fn system_default_core(&self, slug: String) -> Option<String> {
+        let guard = self.inner.lock().ok()?;
+        guard.system_default_core(&slug)
+    }
+
+    /// Boxart thumbnail path for a game, if one is cached — convenience for
+    /// grid shells (avoids a media-row round trip per tile).
+    pub fn boxart_path(&self, game_id: i64) -> Option<String> {
+        let guard = self.inner.lock().ok()?;
+        let media = guard.game_media(game_id).ok()?;
+        let row = media
+            .iter()
+            .find(|m| m.kind == "boxart" && !m.cache_hash.is_empty())?;
+        guard
+            .thumbnail_path(&row.cache_hash)
+            .map(|p| p.to_string_lossy().into_owned())
+    }
+
     /// Thumbnail cache path for a media hash, if a cache exists.
     pub fn thumbnail_path(&self, cache_hash: String) -> Option<String> {
         let guard = self.inner.lock().ok()?;
