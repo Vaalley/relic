@@ -24,4 +24,19 @@ pub enum Error {
 
     #[error("schema version {found} is newer than this build supports ({supported})")]
     SchemaTooNew { found: i64, supported: i64 },
+
+    #[error("game not found: id {0}")]
+    GameNotFound(i64),
+
+    #[error("no launch profile configured for system '{0}' on this platform")]
+    NoLaunchProfile(String),
+
+    #[error("emulator not found: {0}")]
+    EmulatorNotFound(String),
+
+    #[error("bad launch template: {0}")]
+    Template(#[from] crate::launch::template::TemplateError),
+
+    #[error("failed to launch '{exec}': {reason}")]
+    LaunchFailed { exec: String, reason: String },
 }

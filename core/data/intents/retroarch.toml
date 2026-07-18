@@ -1,0 +1,47 @@
+# Relic Android intent template — RetroArch.
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+# RetroArch is the only libretro frontend in the seed set, so this is the only
+# template permitted to use the {core} placeholder. {core} resolves from the
+# launched system's default_core in core/data/systems/*.toml.
+#
+# RetroArch's Android launch interface is the RetroActivityFuture activity,
+# which accepts the ROM URI, the libretro core, an optional config file, and a
+# QUITFOCUS flag that returns focus to Relic on exit. The ROM is carried in the
+# "ROM" extra (not Intent.data), so data_mode = "extra".
+
+id = "retroarch"
+display_name = "RetroArch"
+package = "com.retroarch"
+activity = "com.retroarch.browser.retroactivity.RetroActivityFuture"
+action = "android.intent.action.MAIN"
+data_mode = "extra"
+data_extra_name = "ROM"
+min_version_code = 1  # UNVERIFIED - needs device testing: lowest versionCode known to expose RetroActivityFuture.
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+[[extras]]
+name = "ROM"
+type = "string"
+value = "{rom_uri}"
+
+[[extras]]
+name = "LIBRETRO"
+type = "string"
+value = "{core}"
+
+[[extras]]
+name = "CONFIGFILE"
+type = "string"
+value = ""  # Empty string => RetroArch's default config. Override via per_system if a core needs a specific config.
+
+[[extras]]
+name = "QUITFOCUS"
+type = "bool"
+value = "true"  # UNVERIFIED - needs device testing: QUITFOCUS behavior has varied across RetroArch builds.
+
+# No per_system overrides: {core} already derives the libretro core from the
+# system registry's default_core, so one extras block covers every system.

@@ -1,0 +1,9 @@
+# Normalize to LF in the repo; check out LF everywhere (Rust/CI friendly).
+* text=auto eol=lf
+# PowerShell is happiest with CRLF on disk.
+*.ps1 text eol=crlf
+# Binary fixture/media types, never touched.
+*.png binary
+*.jpg binary
+*.zip binary
+*.7z binary

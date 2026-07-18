@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::db::Db;
 use crate::events::Event;
+use crate::launch::{self, EmulatorRow, LaunchPlan, ProfileRow};
+use crate::metadata::gamelist::{self, GamelistImportStats};
 use crate::scan::{self, ScanSummary};
 use crate::systems::{self, SystemDef};
 use crate::Result;
@@ -59,7 +61,10 @@ impl Engine {
     }
 
     /// Register a library root (idempotent on the path), returning its id.
+    /// The root is stored absolute so launch commands work regardless of the
+    /// working directory the shell/CLI later runs from.
     pub fn add_library(&mut self, root: &Path, name: &str) -> Result<i64> {
+        let root = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
         let uri = root.to_string_lossy().replace('\\', "/");
         self.db.conn().execute(
             "INSERT INTO libraries (root_uri, name) VALUES (?1, ?2)
@@ -152,6 +157,110 @@ impl Engine {
         Ok(())
     }
 
+    /// Import every `<root>/<slug>/gamelist.xml` in a library. A gamelist
+    /// that fails to parse is skipped with a Warning event; matched entries
+    /// enrich `metadata` and canonical names (scan first, then import).
+    pub fn import_gamelists(
+        &mut self,
+        library_id: i64,
+        sink: &mut dyn FnMut(Event),
+    ) -> Result<GamelistImportStats> {
+        let root: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT root_uri FROM libraries WHERE id=?1",
+                [library_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| crate::Error::LibraryNotFound(library_id))?;
+
+        let slugs: Vec<String> = self.systems.iter().map(|s| s.slug.clone()).collect();
+        let mut total = GamelistImportStats::default();
+        for slug in slugs {
+            let path = PathBuf::from(&root).join(&slug).join("gamelist.xml");
+            if !path.is_file() {
+                continue;
+            }
+            let xml = std::fs::read_to_string(&path).map_err(|e| crate::Error::Io {
+                path: path.clone(),
+                source: e,
+            })?;
+            match gamelist::parse_gamelist(&xml) {
+                Ok(entries) => {
+                    let stats = gamelist::import_gamelist(
+                        &mut self.db,
+                        library_id,
+                        &slug,
+                        &slug,
+                        &entries,
+                    )?;
+                    total.matched += stats.matched;
+                    total.unmatched += stats.unmatched;
+                    if stats.matched > 0 {
+                        if let Ok(system_id) = self.db.conn().query_row(
+                            "SELECT id FROM systems WHERE slug=?1",
+                            [slug.as_str()],
+                            |r| r.get(0),
+                        ) {
+                            sink(Event::GamesChanged { system_id });
+                        }
+                    }
+                }
+                Err(e) => sink(Event::Warning {
+                    code: "gamelist.parse".into(),
+                    context: format!("{}: {e}", path.display()),
+                }),
+            }
+        }
+        Ok(total)
+    }
+
+    /// Register an emulator for the current platform, returning its id.
+    pub fn add_emulator(&mut self, name: &str, exec: &str) -> Result<i64> {
+        launch::add_emulator(&self.db, name, launch::current_platform(), exec)
+    }
+
+    pub fn list_emulators(&self) -> Result<Vec<EmulatorRow>> {
+        launch::list_emulators(&self.db)
+    }
+
+    /// Attach a launch profile (emulator by name, system by slug). Higher
+    /// priority wins when several profiles exist for one system.
+    pub fn add_launch_profile(
+        &mut self,
+        emulator_name: &str,
+        system_slug: &str,
+        arg_template: &str,
+        priority: i64,
+    ) -> Result<i64> {
+        let emulator_id = launch::emulator_id_by_name(&self.db, emulator_name)?;
+        let system_id: i64 = self
+            .db
+            .conn()
+            .query_row("SELECT id FROM systems WHERE slug=?1", [system_slug], |r| {
+                r.get(0)
+            })
+            .map_err(|_| crate::Error::UnknownSystem(system_slug.to_string()))?;
+        launch::add_profile(&self.db, emulator_id, system_id, arg_template, priority)
+    }
+
+    pub fn list_launch_profiles(&self) -> Result<Vec<ProfileRow>> {
+        launch::list_profiles(&self.db)
+    }
+
+    /// Resolve a game to its concrete exec + argv without running anything.
+    pub fn resolve_launch(&self, game_id: i64) -> Result<LaunchPlan> {
+        launch::resolve(&self.db, game_id, &self.systems)
+    }
+
+    /// Launch a game and block until the emulator exits, recording the play
+    /// session and streaming LaunchStarted/LaunchEnded through `sink`.
+    pub fn launch(&mut self, game_id: i64, sink: &mut dyn FnMut(Event)) -> Result<i64> {
+        let plan = launch::resolve(&self.db, game_id, &self.systems)?;
+        launch::run_blocking(&self.db, &plan, sink)
+    }
+
     /// Health check used by `relic-cli doctor` and shells on startup.
     pub fn integrity_check(&self) -> Result<bool> {
         self.db.integrity_check()
@@ -203,6 +312,46 @@ mod tests {
         let summary = engine.scan(id, &mut |_| {}).unwrap();
         assert_eq!(summary.removed, 1);
         assert_eq!(engine.query_games(Some("snes"), None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn launch_resolution_and_session_recording() {
+        let lib = fake_library();
+        let mut engine = Engine::open_in_memory().unwrap();
+        let id = engine.add_library(lib.path(), "test").unwrap();
+        engine.scan(id, &mut |_| {}).unwrap();
+        let game_id = engine.query_games(Some("snes"), None).unwrap()[0].id;
+
+        // No profile yet → specific error.
+        assert!(matches!(
+            engine.resolve_launch(game_id),
+            Err(crate::Error::NoLaunchProfile(_))
+        ));
+
+        // Portable no-op "emulator" so run_blocking exercises a real child.
+        let (exec, tpl) = if cfg!(windows) {
+            ("cmd", "/C exit 0")
+        } else {
+            ("true", "{rom}")
+        };
+        engine.add_emulator("noop", exec).unwrap();
+        engine.add_launch_profile("noop", "snes", tpl, 0).unwrap();
+
+        let plan = engine.resolve_launch(game_id).unwrap();
+        assert_eq!(plan.exec, exec);
+        assert!(plan.rom_path.exists());
+
+        let mut events = Vec::new();
+        let session = engine.launch(game_id, &mut |e| events.push(e)).unwrap();
+        assert!(session > 0);
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, Event::LaunchEnded { duration_s, .. } if *duration_s >= 0)));
+
+        // A bad template placeholder is rejected at configuration time.
+        assert!(engine
+            .add_launch_profile("noop", "snes", "{bogus}", 1)
+            .is_err());
     }
 
     #[test]

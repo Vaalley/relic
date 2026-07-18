@@ -1,0 +1,32 @@
+# Relic Android intent template — Dolphin (GameCube / Wii).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# CAUTION: Dolphin's Android intent interface for direct content-URI launch is
+# not well documented and has shifted across versions. Several fields below are
+# marked "# UNVERIFIED - needs device testing" and reflect best-effort
+# captures rather than confirmed behavior. Verify on a real device before
+# relying on this template (docs/android-intents.md §7).
+#
+# Dolphin targets GameCube and Wii, which are not yet in core/data/systems/
+# (no "gamecube" or "wii" slug exists). This template therefore ships without
+# per_system overrides; it will gain per_system.gamecube / per_system.wii keys
+# when those systems are added to the registry.
+
+id = "dolphin"
+display_name = "Dolphin"
+package = "org.dolphinemu.dolphinemu"
+activity = "org.dolphinemu.dolphinemu.ui.main.MainActivity"  # UNVERIFIED - needs device testing: Dolphin has historically launched via MainActivity, but direct content-URI launch may require a different component or a VIEW-capable activity.
+action = "android.intent.action.VIEW"  # UNVERIFIED - needs device testing: Dolphin may not export a VIEW filter for content URIs; MAIN with an extra may be required instead.
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras shipped: assuming data-mode VIEW launch. If device testing shows
+# Dolphin needs the URI in an extra instead, switch data_mode to "extra" and
+# add the corresponding [[extras]] entry here.
+
+# UNVERIFIED - needs device testing: min_version_code not set because the
+# minimum Dolphin version that accepts this intent is unknown.

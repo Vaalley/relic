@@ -1,0 +1,19 @@
+# Relic Android intent template — PPSSPP.
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+# PPSSPP accepts the ROM as Intent.data (a content:// URI) via a VIEW action on
+# its PpssppActivity. No extras required. PSP only (system slug "psp").
+
+id = "ppsspp"
+display_name = "PPSSPP"
+package = "org.ppsspp.ppsspp"
+activity = "org.ppsspp.ppsspp.PpssppActivity"
+action = "android.intent.action.VIEW"
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras: PPSSPP reads the ROM entirely from Intent.data.
+# No per_system: this template targets only the "psp" slug.

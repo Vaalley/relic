@@ -45,6 +45,53 @@ enum Command {
         #[arg(long, default_value = "relic.db")]
         db: PathBuf,
     },
+    /// Import <root>/<system>/gamelist.xml metadata for a scanned library.
+    ImportGamelists {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        root: PathBuf,
+    },
+    /// Register an emulator executable for this platform.
+    EmulatorAdd {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        /// Short unique name, e.g. "retroarch".
+        name: String,
+        /// Path to (or PATH-resolvable name of) the executable.
+        exec: String,
+    },
+    /// List registered emulators.
+    Emulators {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+    },
+    /// Attach a launch profile: which emulator + arguments a system uses.
+    ProfileAdd {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        /// Emulator name as registered with emulator-add.
+        emulator: String,
+        /// System slug, e.g. "snes".
+        system: String,
+        /// Argument template; placeholders: {rom} {rom_dir} {core}.
+        template: String,
+        #[arg(long, default_value_t = 0)]
+        priority: i64,
+    },
+    /// List launch profiles.
+    Profiles {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+    },
+    /// Launch a game by id (shown by `games`) and wait for the emulator.
+    Launch {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        game_id: i64,
+        /// Print the resolved command line instead of running it.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() {
@@ -63,6 +110,22 @@ fn run() -> Result<(), Box<dyn Error>> {
             cmd_games(&db, system.as_deref(), search.as_deref())
         }
         Command::Doctor { db } => cmd_doctor(&db),
+        Command::ImportGamelists { db, root } => cmd_import_gamelists(&db, &root),
+        Command::EmulatorAdd { db, name, exec } => cmd_emulator_add(&db, &name, &exec),
+        Command::Emulators { db } => cmd_emulators(&db),
+        Command::ProfileAdd {
+            db,
+            emulator,
+            system,
+            template,
+            priority,
+        } => cmd_profile_add(&db, &emulator, &system, &template, priority),
+        Command::Profiles { db } => cmd_profiles(&db),
+        Command::Launch {
+            db,
+            game_id,
+            dry_run,
+        } => cmd_launch(&db, game_id, dry_run),
     }
 }
 
@@ -102,8 +165,86 @@ fn cmd_games(db: &Path, system: Option<&str>, search: Option<&str>) -> Result<()
     let games = engine.query_games(system, search)?;
     for g in games {
         let star = if g.favorite { '*' } else { ' ' };
-        println!("[{star}] {} ({})", g.name, g.system_slug);
+        println!("[{star}] #{:<5} {} ({})", g.id, g.name, g.system_slug);
     }
+    Ok(())
+}
+
+fn cmd_import_gamelists(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
+    let name = root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("library")
+        .to_string();
+    let mut engine = Engine::open(db)?;
+    let library_id = engine.add_library(root, &name)?;
+    let stats = engine.import_gamelists(library_id, &mut |event| {
+        if let Event::Warning { code, context } = event {
+            eprintln!("warning [{code}]: {context}");
+        }
+    })?;
+    println!("matched={} unmatched={}", stats.matched, stats.unmatched);
+    Ok(())
+}
+
+fn cmd_emulator_add(db: &Path, name: &str, exec: &str) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    let id = engine.add_emulator(name, exec)?;
+    println!("registered emulator #{id} '{name}' -> {exec}");
+    Ok(())
+}
+
+fn cmd_emulators(db: &Path) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    println!("{:<6} {:<16} {:<8} EXEC", "ID", "NAME", "OS");
+    for e in engine.list_emulators()? {
+        println!("{:<6} {:<16} {:<8} {}", e.id, e.name, e.platform, e.exec);
+    }
+    Ok(())
+}
+
+fn cmd_profile_add(
+    db: &Path,
+    emulator: &str,
+    system: &str,
+    template: &str,
+    priority: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    let id = engine.add_launch_profile(emulator, system, template, priority)?;
+    println!("added profile #{id}: {system} -> {emulator} `{template}`");
+    Ok(())
+}
+
+fn cmd_profiles(db: &Path) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    println!(
+        "{:<6} {:<12} {:<16} {:<4} TEMPLATE",
+        "ID", "SYSTEM", "EMULATOR", "PRI"
+    );
+    for p in engine.list_launch_profiles()? {
+        println!(
+            "{:<6} {:<12} {:<16} {:<4} {}",
+            p.id, p.system_slug, p.emulator_name, p.priority, p.arg_template
+        );
+    }
+    Ok(())
+}
+
+fn cmd_launch(db: &Path, game_id: i64, dry_run: bool) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    let plan = engine.resolve_launch(game_id)?;
+    if dry_run {
+        println!("{} {}", plan.exec, plan.args.join(" "));
+        return Ok(());
+    }
+    eprintln!("launching {} …", plan.rom_path.display());
+    let session = engine.launch(game_id, &mut |event| {
+        if let Event::LaunchEnded { duration_s, .. } = event {
+            eprintln!("session ended after {duration_s}s");
+        }
+    })?;
+    println!("recorded play session #{session}");
     Ok(())
 }
 

@@ -13,6 +13,7 @@ toml.workspace = true
 walkdir.workspace = true
 thiserror.workspace = true
 log.workspace = true
+quick-xml = "0.37"
 
 [features]
 # The default build is pure T0 (offline). Online capability flags are added by
