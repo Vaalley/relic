@@ -1,0 +1,7 @@
+slug = "gb"
+name = "Game Boy / Game Boy Color"
+sort_order = 30
+extensions = ["gb", "gbc", "zip", "7z"]
+ra_console_id = 4
+default_core = "gambatte"
+theme_key = "gb"

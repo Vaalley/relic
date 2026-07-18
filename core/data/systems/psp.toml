@@ -1,0 +1,7 @@
+slug = "psp"
+name = "Sony PSP"
+sort_order = 140
+extensions = ["iso", "cso", "pbp", "chd"]
+ra_console_id = 41
+default_core = "ppsspp"
+theme_key = "psp"

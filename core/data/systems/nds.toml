@@ -1,0 +1,7 @@
+slug = "nds"
+name = "Nintendo DS"
+sort_order = 130
+extensions = ["nds", "zip", "7z"]
+ra_console_id = 18
+default_core = "melonds"
+theme_key = "nds"

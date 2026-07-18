@@ -1,0 +1,11 @@
+/target
+/.agents/runs/
+Cargo.lock.orig
+*.db
+*.db-wal
+*.db-shm
+/apps/android/.gradle
+/apps/android/build
+/apps/android/**/build
+/apps/android/local.properties
+.DS_Store

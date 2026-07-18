@@ -1,0 +1,10 @@
+[package]
+name = "relic-retroachievements"
+description = "Relic's RetroAchievements companion module (T1 display / T2 login)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+relic-core.workspace = true

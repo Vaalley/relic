@@ -1,0 +1,7 @@
+slug = "snes"
+name = "Super Nintendo"
+sort_order = 20
+extensions = ["sfc", "smc", "zip", "7z"]
+ra_console_id = 3
+default_core = "snes9x"
+theme_key = "snes"

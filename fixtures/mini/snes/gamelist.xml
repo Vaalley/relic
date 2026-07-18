@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gameList>
+    <game>
+        <path>./Super Mario World (USA).sfc</path>
+        <name>Super Mario World</name>
+        <desc>Guide Mario and Yoshi through the Mushroom Kingdom to rescue Princess Toadstool from Bowser.</desc>
+        <releasedate>19910821T000000</releasedate>
+        <genre>Platform</genre>
+    </game>
+</gameList>

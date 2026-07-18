@@ -1,0 +1,7 @@
+slug = "nes"
+name = "Nintendo Entertainment System"
+sort_order = 10
+extensions = ["nes", "unf", "unif", "zip", "7z"]
+ra_console_id = 7
+default_core = "mesen"
+theme_key = "nes"

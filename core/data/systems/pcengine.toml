@@ -1,0 +1,7 @@
+slug = "pcengine"
+name = "NEC PC Engine / TurboGrafx-16"
+sort_order = 110
+extensions = ["pce", "cue", "chd", "zip"]
+ra_console_id = 8
+default_core = "mednafen_pce"
+theme_key = "pcengine"

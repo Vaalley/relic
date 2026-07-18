@@ -1,0 +1,7 @@
+slug = "gamegear"
+name = "Sega Game Gear"
+sort_order = 100
+extensions = ["gg", "zip", "7z"]
+ra_console_id = 15
+default_core = "genesis_plus_gx"
+theme_key = "gamegear"

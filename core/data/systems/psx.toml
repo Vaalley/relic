@@ -1,0 +1,7 @@
+slug = "psx"
+name = "Sony PlayStation"
+sort_order = 60
+extensions = ["cue", "chd", "pbp", "m3u", "iso"]
+ra_console_id = 12
+default_core = "swanstation"
+theme_key = "psx"

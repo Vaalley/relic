@@ -1,0 +1,38 @@
+# Default Relic theme — layer 1 (design tokens) per PLAN.md §6.
+#
+# Format is provisional; see themes/README.md and docs/theme-format.md
+# (ships in Phase 5) for the authoritative spec once written.
+
+[theme]
+name = "Default"
+author = "Relic project"
+version = "0.1.0"
+format_version = 1
+
+[colors.dark]
+bg = "#121212"
+surface = "#1e1e1e"
+text = "#f2f2f2"
+text_dim = "#a0a0a0"
+accent = "#7c9eff"
+favorite = "#ffcf5c"
+
+[colors.light]
+bg = "#f7f7f7"
+surface = "#ffffff"
+text = "#121212"
+text_dim = "#5a5a5a"
+accent = "#3a5fd9"
+favorite = "#c98a00"
+
+[typography]
+font_family = "Inter"
+scale = 1.0
+
+[shape]
+radius = 8
+
+[sounds]
+move = ""
+select = ""
+back = ""

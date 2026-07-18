@@ -1,0 +1,7 @@
+slug = "dreamcast"
+name = "Sega Dreamcast"
+sort_order = 160
+extensions = ["gdi", "cdi", "chd", "m3u"]
+ra_console_id = 40
+default_core = "flycast"
+theme_key = "dreamcast"

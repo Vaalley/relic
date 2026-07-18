@@ -1,0 +1,7 @@
+slug = "atari2600"
+name = "Atari 2600"
+sort_order = 120
+extensions = ["a26", "bin", "zip", "7z"]
+ra_console_id = 25
+default_core = "stella"
+theme_key = "atari2600"

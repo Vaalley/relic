@@ -1,0 +1,7 @@
+slug = "n64"
+name = "Nintendo 64"
+sort_order = 70
+extensions = ["n64", "z64", "v64", "zip", "7z"]
+ra_console_id = 2
+default_core = "mupen64plus_next"
+theme_key = "n64"

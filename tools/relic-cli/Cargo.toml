@@ -1,0 +1,15 @@
+[package]
+name = "relic-cli"
+description = "Headless CLI over relic-core: scan, query, launch — also the test harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "relic"
+path = "src/main.rs"
+
+[dependencies]
+relic-core.workspace = true
+clap = { version = "4", features = ["derive"] }

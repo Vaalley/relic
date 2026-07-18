@@ -1,0 +1,7 @@
+slug = "arcade"
+name = "Arcade"
+sort_order = 80
+extensions = ["zip", "7z", "chd"]
+ra_console_id = 27
+default_core = "fbneo"
+theme_key = "arcade"

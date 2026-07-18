@@ -1,0 +1,7 @@
+slug = "gba"
+name = "Game Boy Advance"
+sort_order = 40
+extensions = ["gba", "zip", "7z"]
+ra_console_id = 5
+default_core = "mgba"
+theme_key = "gba"

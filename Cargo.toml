@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "ffi/capi",
+    "modules/scraper",
+    "modules/retroachievements",
+    "modules/sync",
+    "modules/themes",
+    "tools/relic-cli",
+    "apps/desktop",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/vaale/relic"
+
+[workspace.dependencies]
+relic-core = { path = "core" }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+walkdir = "2"
+thiserror = "2"
+log = "0.4"
+
+# Small-binary defaults for release builds (PLAN.md §8 budgets).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

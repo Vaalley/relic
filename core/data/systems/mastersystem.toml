@@ -1,0 +1,7 @@
+slug = "mastersystem"
+name = "Sega Master System"
+sort_order = 90
+extensions = ["sms", "zip", "7z"]
+ra_console_id = 11
+default_core = "genesis_plus_gx"
+theme_key = "mastersystem"

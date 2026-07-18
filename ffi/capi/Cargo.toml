@@ -1,0 +1,13 @@
+[package]
+name = "relic-capi"
+description = "Stable C ABI over relic-core for desktop shells and third parties"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+relic-core.workspace = true

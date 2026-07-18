@@ -1,0 +1,7 @@
+slug = "megadrive"
+name = "Sega Mega Drive / Genesis"
+sort_order = 50
+extensions = ["md", "gen", "bin", "smd", "zip", "7z"]
+ra_console_id = 1
+default_core = "genesis_plus_gx"
+theme_key = "megadrive"
