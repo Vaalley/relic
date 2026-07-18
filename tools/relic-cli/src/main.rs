@@ -193,10 +193,10 @@ fn cmd_scan(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
         .to_string();
     let mut engine = Engine::open(db)?;
     let library_id = engine.add_library(root, &name)?;
-    let summary = engine.scan(library_id, &mut |event| {
-        if let Event::ScanProgress { done, total, .. } = event {
-            eprint!("\r{done}/{total}");
-        }
+    let summary = engine.scan(library_id, &mut |event| match event {
+        Event::ScanProgress { done, total, .. } => eprint!("\r{done}/{total}"),
+        Event::Warning { code, context } => eprintln!("warning [{code}]: {context}"),
+        _ => {}
     })?;
     eprintln!();
     println!(

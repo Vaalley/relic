@@ -61,17 +61,24 @@ pub fn hash_pending(
 ) -> crate::Result<HashStats> {
     let mut stats = HashStats::default();
 
-    // Candidate list: (file id, absolute path).
-    let candidates: Vec<(i64, std::path::PathBuf)> = {
+    // Candidate list: (file id, absolute path, inner archive entry if any).
+    // Plain files hash the file itself; in-archive rows stream the inner
+    // entry so DAT/RA matching sees the real ROM bytes, not the zip's.
+    let candidates: Vec<(i64, std::path::PathBuf, Option<String>)> = {
         let conn = db.conn();
-        let mut rows: Vec<(i64, std::path::PathBuf)> = Vec::new();
+        let mut rows: Vec<(i64, std::path::PathBuf, Option<String>)> = Vec::new();
         let mut push_rows = |sql: &str, params: &[&dyn rusqlite::ToSql]| -> crate::Result<()> {
             let mut stmt = conn.prepare(sql)?;
             let mapped = stmt.query_map(params, |r| {
                 let id: i64 = r.get(0)?;
                 let root: String = r.get(1)?;
                 let rel_path: String = r.get(2)?;
-                Ok((id, std::path::PathBuf::from(root).join(rel_path)))
+                let in_archive: Option<String> = r.get(3)?;
+                Ok((
+                    id,
+                    std::path::PathBuf::from(root).join(rel_path),
+                    in_archive,
+                ))
             })?;
             for row in mapped {
                 rows.push(row?);
@@ -80,16 +87,16 @@ pub fn hash_pending(
         };
         match library_id {
             Some(lib) => push_rows(
-                "SELECT f.id, l.root_uri, f.rel_path FROM files f
+                "SELECT f.id, l.root_uri, f.rel_path, f.in_archive FROM files f
                  JOIN libraries l ON l.id = f.library_id
-                 WHERE f.crc32 IS NULL AND f.in_archive IS NULL AND f.library_id = ?1
+                 WHERE f.crc32 IS NULL AND f.library_id = ?1
                  LIMIT ?2",
                 rusqlite::params![lib, limit as i64],
             )?,
             None => push_rows(
-                "SELECT f.id, l.root_uri, f.rel_path FROM files f
+                "SELECT f.id, l.root_uri, f.rel_path, f.in_archive FROM files f
                  JOIN libraries l ON l.id = f.library_id
-                 WHERE f.crc32 IS NULL AND f.in_archive IS NULL
+                 WHERE f.crc32 IS NULL
                  LIMIT ?1",
                 rusqlite::params![limit as i64],
             )?,
@@ -98,8 +105,12 @@ pub fn hash_pending(
     };
 
     let mut hashed: Vec<(i64, String, String)> = Vec::with_capacity(candidates.len());
-    for (file_id, path) in &candidates {
-        match hash_file(path) {
+    for (file_id, path, in_archive) in &candidates {
+        let result = match in_archive {
+            Some(inner) => super::archive::hash_entry(path, inner),
+            None => hash_file(path),
+        };
+        match result {
             Ok((crc32, md5)) => hashed.push((*file_id, crc32, md5)),
             Err(e) => {
                 stats.failed += 1;
@@ -183,6 +194,44 @@ mod tests {
         )
         .unwrap();
         library_id
+    }
+
+    #[test]
+    fn hash_pending_streams_in_archive_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("pack.zip");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zw = zip::ZipWriter::new(file);
+        zw.start_file::<_, ()>("inner.sfc", Default::default())
+            .unwrap();
+        std::io::Write::write_all(&mut zw, b"relic test fixture").unwrap();
+        zw.finish().unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let library_id = seed(&mut db, dir.path());
+        db.conn_mut()
+            .execute(
+                "INSERT INTO files (game_id, library_id, rel_path, size, mtime, quick_key, in_archive)
+                 VALUES ((SELECT id FROM games LIMIT 1), ?1, 'pack.zip', 1, 0, 'k3', 'inner.sfc')",
+                [library_id],
+            )
+            .unwrap();
+
+        // limit high enough to also try the seeded plain rows; we only check
+        // the archive row got the known vector for its inner bytes.
+        std::fs::write(dir.path().join("present.rom"), b"x").unwrap();
+        hash_pending(&mut db, Some(library_id), 10, &mut |_| {}).unwrap();
+
+        let (crc32, md5): (String, String) = db
+            .conn()
+            .query_row(
+                "SELECT crc32, md5 FROM files WHERE in_archive = 'inner.sfc'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(crc32, "1200b7b5");
+        assert_eq!(md5, "e0bfa1288941a3a223f67af71e2e45f5");
     }
 
     #[test]
