@@ -1,16 +1,18 @@
 # Relic Android intent template — melonDS (Android port).
 # Spec: docs/android-intents.md. Status: Draft, Phase 3.
 #
-# CAUTION: melonDS's Android port is community-maintained and its package /
-# launch activity have varied across builds. The component below is marked
-# "# UNVERIFIED - needs device testing". Verify on a real device before relying
-# on this template (docs/android-intents.md §7). NDS only (system slug "nds").
+# Interface per research (docs/android-standalone-emulators.md §2.7):
+# package me.magnum.melonds, activity ui.emulator.EmulatorActivity, VIEW with
+# the ROM as Intent.data — canonical per the melonDS-android README (the
+# "uri"/"PATH" extras are deprecated fallbacks). Previous package/activity
+# guesses (io.github.melonds.*, MainActivity) were wrong. NDS only (system
+# slug "nds").
 
 id = "melonds"
 display_name = "melonDS"
-package = "io.github.melonds.melonds"  # UNVERIFIED - needs device testing: package ID has differed across community builds (e.g. io.github.melonDS.melonDS, com.github.melonds). Confirm via `adb shell pm list packages` on the target install.
-activity = "io.github.melonds.melonds.MainActivity"  # UNVERIFIED - needs device testing: launch activity is not documented; MainActivity is a guess based on common Android conventions.
-action = "android.intent.action.VIEW"  # UNVERIFIED - needs device testing: melonDS Android may not export a VIEW filter for content URIs.
+package = "me.magnum.melonds"
+activity = "me.magnum.melonds.ui.emulator.EmulatorActivity"
+action = "android.intent.action.VIEW"
 data_mode = "data"
 
 flags = [
@@ -18,8 +20,8 @@ flags = [
   "FLAG_ACTIVITY_CLEAR_TOP",
 ]
 
-# No extras shipped: assuming data-mode VIEW launch. If device testing shows
-# melonDS needs the URI in an extra, switch data_mode to "extra" and add the
-# corresponding [[extras]] entry here.
+# No extras: melonDS reads the ROM from Intent.data. UX caveat: melonDS keeps
+# saves next to the ROM only if its own SAF directory grant covers the folder;
+# otherwise saves land in Android/data/me.magnum.melonds/files/saves.
 
 # No per_system: this template targets only the "nds" slug.

@@ -1,19 +1,35 @@
 # Relic Android intent template — DuckStation.
 # Spec: docs/android-intents.md. Status: Draft, Phase 3.
-# DuckStation accepts the ROM as Intent.data (a content:// URI) via a VIEW
-# action on its MainActivity. PSX only (system slug "psx").
+#
+# Interface per research (docs/android-standalone-emulators.md §2.4):
+# EmulationActivity + MAIN + "bootPath" extra (content:// URI), corroborated by
+# Pegasus #788 and Daijishou #612 — NOT MainActivity + VIEW as previously
+# assumed. The Android app source is no longer public, so this rests on
+# independent frontend configs; treat as needing a real-device pass.
+# resumeState is forced false: save-state resume does not work on external
+# launches (Daijishou #612). PSX only (system slug "psx").
 
 id = "duckstation"
 display_name = "DuckStation"
 package = "com.github.stenzek.duckstation"
-activity = "com.github.stenzek.duckstation.MainActivity"
-action = "android.intent.action.VIEW"
-data_mode = "data"
+activity = "com.github.stenzek.duckstation.EmulationActivity"
+action = "android.intent.action.MAIN"
+data_mode = "extra"
+data_extra_name = "bootPath"
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",
   "FLAG_ACTIVITY_CLEAR_TOP",
 ]
 
-# No extras: DuckStation reads the ROM entirely from Intent.data.
+[[extras]]
+name = "bootPath"
+type = "string"
+value = "{rom_uri}"
+
+[[extras]]
+name = "resumeState"
+type = "bool"
+value = "false"
+
 # No per_system: this template targets only the "psx" slug.
