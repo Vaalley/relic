@@ -1,0 +1,60 @@
+# Relic Android intent template — Dolphin MMJR2 (GameCube / Wii).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Dolphin MMJR2 is a performance-focused Dolphin fork (originally
+# Weihuoya's MMJ, then MMJR, now MMJR2; the active line is Medard22's VBI
+# build). Per research (docs/android-standalone-emulators.md §2.3) it
+# tracks Dolphin's intent interface and periodically rebases on Dolphin
+# dev builds.
+#
+# Package note: the application ID is org.dolphinemu.mmjr — NOT ".mmjr2",
+# despite the fork's marketing name. Co-installs with official Dolphin.
+# Sources: Medard22/Dolphin-MMJR2-VBI README (package ID
+# org.dolphinemu.mmjr), EmuDeck Android_Dolphin.sh (am start -n
+# org.dolphinemu.mmjr/org.dolphinemu.dolphinemu.ui.main.MainActivity),
+# ApkPure listing (confirms package).
+#
+# A separate dolphin_mmjr.toml (this file) is shipped rather than a
+# per_system override on dolphin.toml, because both emulators target the
+# same systems and the user picks one — they differ only in package.
+#
+# The activity / action / data transport below are inherited from
+# Dolphin's interface (MainActivity + MAIN + AutoStartFile extra carrying
+# a content:// URI). The research doc marks all of these [VERIFY] for
+# MMJR2 specifically — the fork keeps Dolphin's package-internal class
+# names and EmuDeck's setup script launches the same MainActivity, but
+# no primary source confirms the fork's manifest exports the same
+# intent-filter. Treat as needs a real-device pass.
+#
+# Targets the "gamecube" and "wii" system slugs (same as dolphin.toml).
+# No per_system overrides needed: the interface is identical for both.
+
+id = "dolphin_mmjr"
+display_name = "Dolphin MMJR2"
+package = "org.dolphinemu.mmjr"
+# UNVERIFIED - needs device testing: activity class inherited from
+# Dolphin (fork keeps Dolphin's package-internal class names; EmuDeck
+# launches the same MainActivity). No primary source confirms the fork's
+# manifest exports the same intent-filter.
+activity = "org.dolphinemu.dolphinemu.ui.main.MainActivity"
+# UNVERIFIED - needs device testing: action inherited from Dolphin.
+action = "android.intent.action.MAIN"
+data_mode = "extra"
+data_extra_name = "AutoStartFile"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+[[extras]]
+# UNVERIFIED - needs device testing: AutoStartFile extra inherited from
+# Dolphin; not confirmed against the fork's manifest.
+name = "AutoStartFile"
+type = "string"
+value = "{rom_uri}"
+
+# No per_system: interface is identical for the "gamecube" and "wii"
+# slugs. min_version_code not set (minimum MMJR2 version that accepts
+# this intent is unknown). Returns-to-caller behavior is
+# [VERIFY] per the research doc — rely on the session watchdog.

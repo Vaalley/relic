@@ -1,0 +1,41 @@
+# Relic Android intent template — AetherSX2 / NetherSX2 (PS2).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Interface per research (docs/android-standalone-emulators.md §2.9):
+# EmulationActivity + MAIN + "bootPath" string extra carrying a content://
+# URI. Sources: pegasus specials.txt (canonical am start with
+# -e bootPath {file.documenturi}), NeoGameLab/neostation-systems README
+# (same), AetherSX2 GitHub README (confirms package xyz.aethersx2.android),
+# Trixarian/NetherSX2-patch README.
+#
+# NetherSX2 is a binary patch of AetherSX2 4248 and keeps the same package
+# ID (so it installs over AetherSX2 and inherits the Play Store listing's
+# data). One template therefore covers both AetherSX2 and NetherSX2 — no
+# separate nethersx2.toml is needed. AetherSX2 itself is discontinued;
+# NetherSX2 is the actively-maintained line.
+#
+# Returns to caller: [VERIFY] per source — not documented. Relic should
+# rely on its session watchdog + onActivityResult rather than assume a
+# clean return. PS2 only (system slug "ps2", core/data/systems/ps2.toml).
+
+id = "aethersx2"
+display_name = "AetherSX2 / NetherSX2"
+package = "xyz.aethersx2.android"
+activity = "xyz.aethersx2.android.EmulationActivity"
+action = "android.intent.action.MAIN"
+data_mode = "extra"
+data_extra_name = "bootPath"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+[[extras]]
+name = "bootPath"
+type = "string"
+value = "{rom_uri}"
+
+# No per_system: this template targets only the "ps2" slug. Returns-to-
+# caller behavior is [VERIFY] per the research doc — rely on the session
+# watchdog.

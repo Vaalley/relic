@@ -22,11 +22,12 @@ consumers:
 - A future `relic-cli intent validate` (Phase 3) — the validator that enforces
   the rules in §6.
 
-The five templates shipped here (RetroArch, PPSSPP, Dolphin, melonDS,
-DuckStation) are the canonical examples and the seed set called for in
-`PLAN.md` §4.5. Where this spec and a shipped template disagree, the spec is
-wrong until updated; the template is the source of truth for the current
-provisional shape.
+The templates shipped here are the canonical examples and the seed set called
+for in `PLAN.md` §4.5, since expanded past the original five (RetroArch,
+PPSSPP, Dolphin, melonDS, DuckStation) with the Tier 1/2 emulators identified
+by the research digest at `docs/android-standalone-emulators.md`. Where this
+spec and a shipped template disagree, the spec is wrong until updated; the
+template is the source of truth for the current provisional shape.
 
 These files are **data, not code**. They are not yet `include_str!`-ed into any
 crate, not referenced by `Cargo.toml`, and not loaded by `relic-core`. Adding a
@@ -87,10 +88,22 @@ Shipped seed set:
 | File | Emulator | Targets |
 |---|---|---|
 | `retroarch.toml` | RetroArch | All libretro-supported systems (core chosen per system) |
-| `ppsspp.toml` | PPSSPP | `psp` |
-| `dolphin.toml` | Dolphin | GameCube / Wii (no Relic system slug yet — see file) |
+| `ppsspp.toml` | PPSSPP (free) | `psp` |
+| `ppsspp_gold.toml` | PPSSPP Gold (paid) | `psp` |
+| `ppsspp_legacy.toml` | PPSSPP Legacy (pre-scoped-storage) | `psp` |
+| `dolphin.toml` | Dolphin | `gamecube`, `wii` |
+| `dolphin_mmjr.toml` | Dolphin MMJR2 (performance fork) | `gamecube`, `wii` |
 | `melonds.toml` | melonDS (Android) | `nds` |
 | `duckstation.toml` | DuckStation | `psx` |
+| `aethersx2.toml` | AetherSX2 / NetherSX2 | `ps2` |
+| `azahar.toml` | Azahar (was Lime3DS) | `n3ds` |
+| `mupen64plus_fz.toml` | Mupen64Plus FZ | `n64` |
+| `yabasanshiro2.toml` | Yaba Sanshiro 2 | `saturn` |
+
+Deferred pending further verification or a schema extension (see
+`docs/android-standalone-emulators.md` §4): Flycast, DraStic, Redream, Citra
+MMJ, ScummVM (needs a `scummvm:<target>` URI scheme the current schema
+doesn't support).
 
 ---
 
@@ -137,7 +150,7 @@ substituted by the shell at launch time. No other field accepts placeholders.
 |---|---|---|
 | `{rom_uri}` | The `content://` URI Relic has granted for the ROM file, via SAF. This is the same URI passed to `Intent.data` when `data_mode = "data"`. | Always. |
 | `{rom_path}` | The ROM's path relative to its library root, as Relic stores it in `files.rel_path`. Useful for emulators that key state off filename rather than URI. | Always. |
-| `{core}` | The libretro core filename stem for the system being launched (e.g. `snes9x`, `mesen`), taken from the system registry's `default_core` field (`core/data/systems/*.toml`). **RetroArch only** — other emulators are not libretro and have no core; referencing `{core}` in a non-RetroArch template is a validation error. | RetroArch templates only. |
+| `{core}` | The libretro core for the system being launched, taken from the system registry's `default_core` field (`core/data/systems/*.toml`). **RetroArch only** — other emulators are not libretro and have no core; referencing `{core}` in a non-RetroArch template is a validation error. Resolves to the **full path** to the core `.so` (e.g. `/data/data/<pkg>/cores/mesen_libretro_android.so`), not just the filename stem — RetroArch AArch64 nightlies ≥ 2025-01-17 reject a bare stem (`docs/android-standalone-emulators.md` §2.1, `libretro/RetroArch#17433`). The alpha hardcoded launcher (`apps/android/.../RetroArchLauncher.kt`) already does this; the future data-driven resolver must match it. | RetroArch templates only. |
 
 Unknown placeholders fail validation. Literal braces in a value are written
 `{{` and `}}` (standard TOML has no escape for this; the resolver treats `{{`
@@ -164,9 +177,10 @@ extras = [
 ```
 
 Slugs are the ones listed in `core/data/systems/` (currently: `arcade`,
-`atari2600`, `dreamcast`, `gamegear`, `gb`, `gba`, `mastersystem`, `megadrive`,
-`n64`, `nds`, `nes`, `pcengine`, `psp`, `psx`, `saturn`, `snes`). A
-`per_system` key that doesn't match a known slug fails validation.
+`atari2600`, `dreamcast`, `gamecube`, `gamegear`, `gb`, `gba`, `mastersystem`,
+`megadrive`, `n3ds`, `n64`, `nds`, `nes`, `pcengine`, `ps2`, `psp`, `psx`,
+`saturn`, `snes`, `wii`). A `per_system` key that doesn't match a known slug
+fails validation.
 
 ### 4.5 `flags` values
 
@@ -327,21 +341,49 @@ directory to override a built-in.
 
 ## 8. Reference: shipped templates
 
+All templates below were cross-checked against primary sources in
+`docs/android-standalone-emulators.md`; `[VERIFY]` items from that digest are
+carried into the TOML as `# UNVERIFIED - needs device testing` comments
+rather than silently resolved.
+
 - `retroarch.toml` — RetroArch. `data_mode = "extra"` (`ROM` extra), with
   `LIBRETRO` (`{core}`), `CONFIGFILE`, and `QUITFOCUS` extras per
   RetroArch's `RetroActivityFuture` interface. Covers every system in the
   registry via `{core}`; no `per_system` overrides needed because the core is
   system-derived.
-- `ppsspp.toml` — PPSSPP. `data_mode = "data"`, action `VIEW`, target
-  `org.ppsspp.ppsspp/.PpssppActivity`. PSP only.
-- `dolphin.toml` — Dolphin. Several fields marked `# UNVERIFIED - needs device
-  testing`: Dolphin's Android intent interface for direct content-URI launch
-  is not well documented and has changed across versions. Targets GameCube /
-  Wii, which have no Relic system slug yet — the template ships without
-  `per_system` and will gain `gamecube` / `wii` keys when those systems are
-  added to `core/data/systems/`.
-- `melonds.toml` — melonDS Android port. Component marked `# UNVERIFIED -
-  needs device testing`; the Android port's package and launch activity have
-  varied across community builds. NDS only.
-- `duckstation.toml` — DuckStation. `data_mode = "data"`, action `VIEW`,
-  target `com.github.stenzek.duckstation/.MainActivity`. PSX only.
+- `ppsspp.toml` / `ppsspp_gold.toml` / `ppsspp_legacy.toml` — PPSSPP free,
+  Gold (paid), and Legacy (pre-scoped-storage) packages. Identical interface
+  (`data_mode = "data"`, action `VIEW`, `org.ppsspp.ppsspp/.PpssppActivity`
+  in all three), differing only by application ID; mutually exclusive
+  installs. PSP only.
+- `dolphin.toml` — Dolphin. `data_mode = "extra"` (`AutoStartFile`), action
+  `MAIN` — `MainActivity` does not export a `VIEW` filter. Targets `gamecube`
+  and `wii`. Return-to-caller behavior is `[VERIFY]`; no `QUITFOCUS`
+  equivalent.
+- `dolphin_mmjr.toml` — Dolphin MMJR2, a performance-focused fork. Package
+  `org.dolphinemu.mmjr` (not `.mmjr2`); interface inherited from Dolphin and
+  marked `# UNVERIFIED - needs device testing` throughout since no primary
+  source confirms the fork's manifest. Targets `gamecube` and `wii`.
+- `melonds.toml` — melonDS (`me.magnum.melonds`). `data_mode = "data"`,
+  action `VIEW`, target `.../ui.emulator.EmulatorActivity`. NDS only.
+- `duckstation.toml` — DuckStation. `data_mode = "extra"` (`bootPath`),
+  action `MAIN`, target `.../EmulationActivity` (not `MainActivity`).
+  `resumeState` forced `false` — external-launch save-state resume doesn't
+  work. PSX only.
+- `aethersx2.toml` — AetherSX2 / NetherSX2 (same package; NetherSX2 is a
+  binary patch of AetherSX2 that keeps the package ID). `data_mode = "extra"`
+  (`bootPath`), action `MAIN`. PS2 only.
+- `azahar.toml` — Azahar (was Lime3DS; also covers Lime3DS, same package).
+  `data_mode = "data"`, action `VIEW`. Installed package
+  (`io.github.lime3ds.android`) differs from the `build.gradle.kts`
+  `applicationId` (`org.azahar_emu.azahar`) — kept for Play Store listing
+  continuity. 3DS (`n3ds`) only.
+- `mupen64plus_fz.toml` — Mupen64Plus FZ, free package
+  (`org.mupen64plusae.v3.fzurita`; Pro and upstream-alpha packages exist as
+  alternates, not shipped as separate templates). `data_mode = "data"`,
+  action `VIEW`. Content-URI support is `# UNVERIFIED`. N64 only.
+- `yabasanshiro2.toml` — Yaba Sanshiro 2, Pro package. `data_mode = "extra"`
+  (`org.uoyabause.android.FileNameUri`), action `VIEW` — marked
+  `# UNVERIFIED` since the developer states `MAIN`-only while working
+  community configs use `VIEW`. Only `.chd` Saturn images launch reliably
+  (upstream bug). Saturn only.

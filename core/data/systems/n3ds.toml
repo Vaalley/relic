@@ -1,0 +1,5 @@
+slug = "n3ds"
+name = "Nintendo 3DS"
+sort_order = 83
+extensions = ["3ds", "cia", "cxi", "3dsx"]
+theme_key = "n3ds"

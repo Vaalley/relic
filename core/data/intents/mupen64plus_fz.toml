@@ -1,0 +1,55 @@
+# Relic Android intent template — Mupen64Plus FZ (N64).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Interface per research (docs/android-standalone-emulators.md §2.8):
+# SplashActivity + VIEW + Intent.data, no extras. Sources:
+# fzurita/mupen64plus-ae build.gradle (applicationId =
+# org.mupen64plusae.v3.alpha upstream; fzurita's Play Store flavor
+# overrides to org.mupen64plusae.v3.fzurita with .pro suffix), commit
+# 691083a (free/pro flavor split, SplashActivity exported with
+# intent-filter), Pegasus community config (working am start -n
+# org.mupen64plusae.v3.fzurita/paulscode.android.mupen64plusae.SplashActivity
+# -a android.intent.action.VIEW -d {file.path}), Play Store listing
+# (confirms package).
+#
+# Package variants: this template ships the free Play Store package
+# org.mupen64plusae.v3.fzurita. Alternates (not shipped as separate
+# templates — handle via launch-profile priority list):
+#   - Pro (donation): org.mupen64plusae.v3.fzurita.pro (applicationIdSuffix
+#     .pro per commit 691083a).
+#   - Upstream alpha (F-Droid / fzurita/mupen64plus-ae master):
+#     org.mupen64plusae.v3.alpha.
+#
+# Content-URI support: [VERIFY] per source — historically a file:// URI /
+# bare path was used; the project has a useLegacyFileBrowser /
+# startSafFilePicker split (discussion #1136) suggesting SAF support
+# exists, but frontend launch via content URI is not documented. Marked
+# UNVERIFIED below; needs a real-device pass before Verified status.
+#
+# The "n64" system slug already exists in core/data/systems/, but no
+# per_system block is added: this template only targets n64 by convention
+# (n64 is its only target), same pattern as ppsspp.toml targeting only
+# psp.
+#
+# Returns to caller: [VERIFY] per source — not documented.
+
+id = "mupen64plus_fz"
+display_name = "Mupen64Plus FZ"
+package = "org.mupen64plusae.v3.fzurita"
+activity = "paulscode.android.mupen64plusae.SplashActivity"
+action = "android.intent.action.VIEW"
+# UNVERIFIED - needs device testing: content-URI (content://) support is
+# not documented; historically a file:// URI / bare path was used. The
+# project has a useLegacyFileBrowser / startSafFilePicker split
+# (discussion #1136) suggesting SAF support exists, but frontend launch
+# via content URI is unconfirmed.
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras: Mupen64Plus FZ reads the ROM entirely from Intent.data.
+# No per_system: this template targets only the "n64" slug by convention
+# (same pattern as ppsspp.toml targeting only psp).

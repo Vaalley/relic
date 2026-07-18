@@ -1,0 +1,41 @@
+# Relic Android intent template — PPSSPP Gold (PSP, paid variant).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Paid Gold variant of PPSSPP. Same intent interface as the free package
+# per research (docs/android-standalone-emulators.md §2.5): PpssppActivity
+# + VIEW + Intent.data carrying a content:// URI, no extras. The activity
+# class name (org.ppsspp.ppsspp.PpssppActivity) is identical across the
+# free, Gold, and legacy packages — only the application ID differs.
+# Sources: PPSSPP front-end integration docs (canonical: activity names
+# for free/Gold/legacy, VIEW action), hrydgard/ppsspp commit 1e2c3f7
+# (manifest adds content scheme to the VIEW intent-filter), pegasus
+# specials.txt (confirms VIEW + {file.documenturi}).
+#
+# Mutually exclusive install with the free package
+# (org.ppsspp.ppsspp): a device has either Gold or free installed, not
+# both. Handle via launch-profile priority list across the three package
+# IDs (free, gold, legacy) — they are mutually exclusive, so the profile
+# picker can try them in order.
+#
+# PSP only (system slug "psp"). No per_system: this template targets only
+# the "psp" slug, same pattern as ppsspp.toml.
+#
+# Returns to caller: [VERIFY] per source — not documented. PPSSPP's
+# pause-menu "exit" returns to the launcher activity stack; Relic should
+# rely on onActivityResult.
+
+id = "ppsspp_gold"
+display_name = "PPSSPP Gold"
+package = "org.ppsspp.ppssppgold"
+activity = "org.ppsspp.ppsspp.PpssppActivity"
+action = "android.intent.action.VIEW"
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras: PPSSPP Gold reads the ROM entirely from Intent.data, same as
+# the free package.
+# No per_system: this template targets only the "psp" slug.

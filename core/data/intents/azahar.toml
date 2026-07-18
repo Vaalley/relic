@@ -1,0 +1,53 @@
+# Relic Android intent template — Azahar (was Lime3DS) / Lime3DS (3DS).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Interface per research (docs/android-standalone-emulators.md §2.12
+# "Azahar (was Lime3DS)"): EmulationActivity + VIEW + Intent.data carrying
+# a content:// URI, no extras. Sources: azahar-emu/azahar#736 (canonical
+# am start command), azahar-emu/azahar#1484 (es_find_rules entry confirms
+# component; scoped-storage permission caveat — Relic's
+# FLAG_GRANT_READ_URI_PERMISSION grant is the correct mitigation),
+# build.gradle.kts (namespace = "org.citra.citra_emu", applicationId =
+# "org.azahar_emu.azahar"), Play Store listing (confirms installed
+# package io.github.lime3ds.android).
+#
+# Package / activity namespace mismatch: the Play Store package is kept as
+# io.github.lime3ds.android for listing continuity, even though the
+# build.gradle.kts applicationId is org.azahar_emu.azahar. The activity
+# class lives under the org.citra.citra_emu namespace (the namespace in
+# build.gradle.kts), so the component is
+# io.github.lime3ds.android/org.citra.citra_emu.activities.EmulationActivity.
+#
+# This template also covers Lime3DS: Azahar inherited the Lime3DS codebase
+# and Play Store listing, so the package and activity are identical. Do
+# NOT ship a separate lime3ds.toml.
+#
+# Citra MMJ (weihuoya fork, org.citra.emu) is intentionally NOT covered
+# here: per the research doc its intent interface regressed upstream
+# (20250221 build removed external launch), so it is deferred until a
+# device test confirms a launch-capable exported activity. Do NOT ship a
+# citra_mmj.toml.
+#
+# Upstream caveat (not a template issue): issue #1484 reports a
+# permission-denial error when Azahar tries to resolve sibling files
+# (e.g. .exheader next to a .cxi) under a content-URI grant. Relic's grant
+# is correct; the bug is in Azahar's content-URI handling. Worth noting in
+# user-facing troubleshooting docs.
+#
+# Returns to caller: [VERIFY] per source — not documented. 3DS only
+# (system slug "n3ds", core/data/systems/n3ds.toml).
+
+id = "azahar"
+display_name = "Azahar (was Lime3DS)"
+package = "io.github.lime3ds.android"
+activity = "org.citra.citra_emu.activities.EmulationActivity"
+action = "android.intent.action.VIEW"
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras: Azahar reads the ROM entirely from Intent.data.
+# No per_system: this template targets only the "n3ds" slug.

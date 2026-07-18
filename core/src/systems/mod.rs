@@ -27,6 +27,10 @@ const BUILTIN: &[&str] = &[
     include_str!("../../data/systems/psp.toml"),
     include_str!("../../data/systems/saturn.toml"),
     include_str!("../../data/systems/dreamcast.toml"),
+    include_str!("../../data/systems/gamecube.toml"),
+    include_str!("../../data/systems/wii.toml"),
+    include_str!("../../data/systems/ps2.toml"),
+    include_str!("../../data/systems/n3ds.toml"),
 ];
 
 #[derive(Debug, Clone, Deserialize)]

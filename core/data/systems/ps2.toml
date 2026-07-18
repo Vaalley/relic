@@ -1,0 +1,5 @@
+slug = "ps2"
+name = "PlayStation 2"
+sort_order = 82
+extensions = ["iso", "bin", "mdf", "chd", "cso"]
+theme_key = "ps2"

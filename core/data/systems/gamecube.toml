@@ -1,0 +1,5 @@
+slug = "gamecube"
+name = "GameCube"
+sort_order = 80
+extensions = ["iso", "gcm", "gcz", "rvz", "ciso"]
+theme_key = "gamecube"

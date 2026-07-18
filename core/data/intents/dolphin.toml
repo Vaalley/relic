@@ -8,10 +8,9 @@
 # PR #10272, pegasus-frontend #1096, Daijishou #640. Still needs a real-device
 # pass before Verified status (docs/android-intents.md §7).
 #
-# Dolphin targets GameCube and Wii, which are not yet in core/data/systems/
-# (no "gamecube" or "wii" slug exists). This template therefore ships without
-# per_system overrides; it will gain per_system.gamecube / per_system.wii keys
-# when those systems are added to the registry.
+# Dolphin targets GameCube and Wii (system slugs "gamecube" and "wii",
+# core/data/systems/{gamecube,wii}.toml). No per_system overrides are
+# needed: the AutoStartFile interface above is identical for both systems.
 
 id = "dolphin"
 display_name = "Dolphin"

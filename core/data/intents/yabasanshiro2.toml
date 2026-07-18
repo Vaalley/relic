@@ -1,0 +1,71 @@
+# Relic Android intent template — Yaba Sanshiro 2 (Saturn).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Interface per research (docs/android-standalone-emulators.md §2.14):
+# Yabause activity + VIEW + "org.uoyabause.android.FileNameUri" string
+# extra carrying a content:// URI. Sources: Daijishou#562 (working config
+# + devmiyax comment on action + extra rename FileNameEx -> FileNameUri),
+# devmiyax/yabause#983 (scoped-storage file-access errors via frontend on
+# Android 11+), ES-DE issue 1664 (working ES-DE config: ACTION=VIEW +
+# EXTRA_org.uoyabause.android.FileNameUri=%ROMSAF%), pegasus specials.txt
+# (older config using FileNameEx + {file.path}).
+#
+# Disputed action: the dev (devmiyax) stated in Daijishou#562 that
+# "YabaSanshiro only support android.intent.action.MAIN not
+# android.intent.action.VIEW", yet the working community configs (ES-DE
+# issue 1664, Daijishou#562) use VIEW + the FileNameUri extra. This may
+# reflect a manifest change across versions; the research doc recommends
+# VIEW against the current Pro build. Marked UNVERIFIED below — verify on
+# the installed build.
+#
+# Extra-name migration: older builds use org.uoyabause.android.FileNameEx
+# with a bare filesystem path instead of FileNameUri with a content://
+# URI. This template targets the current Pro build (FileNameUri); bare-
+# path FileNameEx builds are not supported under Relic's read-only
+# content-URI security model.
+#
+# Known .bin/.cue crash bug: only .chd Saturn ROMs work reliably when
+# launched from a frontend (ES-DE issue 1664). This is an upstream bug in
+# Yaba Sanshiro 2, not a template issue — fall back to RetroArch's
+# mednafen_saturn / yabasanshiro libretro core for .bin/.cue.
+#
+# Free (non-Pro) package ID: [VERIFY] per source — the older non-`2` line
+# used org.uoyabause.android and org.uoyabause.android.pro; the current
+# free package ID for Yaba Sanshiro 2 is unconfirmed. This template ships
+# only the Pro package (org.devmiyax.yabasanshioro2.pro); a free-package
+# variant should be added only after the package ID is confirmed.
+#
+# The "saturn" system slug already exists in core/data/systems/, but no
+# per_system block is added: this template only targets saturn by
+# convention (saturn is its only target), same pattern as ppsspp.toml
+# targeting only psp.
+#
+# Returns to caller: [VERIFY] per source — not documented.
+
+id = "yabasanshiro2"
+display_name = "Yaba Sanshiro 2"
+package = "org.devmiyax.yabasanshioro2.pro"
+activity = "org.uoyabause.android.Yabause"
+# UNVERIFIED - needs device testing: action is disputed. The dev states
+# MAIN-only (Daijishou#562); working community configs use VIEW (ES-DE
+# issue 1664, Daijishou#562). Research doc recommends VIEW against the
+# current Pro build. Verify on the installed build.
+action = "android.intent.action.VIEW"
+data_mode = "extra"
+data_extra_name = "org.uoyabause.android.FileNameUri"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+[[extras]]
+name = "org.uoyabause.android.FileNameUri"
+type = "string"
+value = "{rom_uri}"
+
+# No per_system: this template targets only the "saturn" slug by
+# convention (same pattern as ppsspp.toml targeting only psp).
+# Free-package-id is [VERIFY] per the research doc — only the Pro package
+# is shipped here. Upstream .bin/.cue crash bug noted in the header; not
+# a template issue.

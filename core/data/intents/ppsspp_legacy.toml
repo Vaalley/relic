@@ -1,0 +1,39 @@
+# Relic Android intent template — PPSSPP Legacy (PSP, pre-scoped-storage).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# Legacy pre-scoped-storage build of PPSSPP per research
+# (docs/android-standalone-emulators.md §2.5): same activity class name
+# (org.ppsspp.ppsspp.PpssppActivity), action (VIEW), and data_mode (data)
+# as the free package — only the application ID differs
+# (org.ppsspp.ppsspplegacy). Sources: PPSSPP front-end integration docs
+# (canonical: activity names for free/Gold/legacy, VIEW action),
+# hrydgard/ppsspp commit 1e2c3f7 (manifest adds content scheme to the
+# VIEW intent-filter), pegasus specials.txt (confirms VIEW +
+# {file.documenturi}).
+#
+# Mutually exclusive install with the free and Gold packages: a device
+# has at most one of free / Gold / legacy installed. Handle via
+# launch-profile priority list across the three package IDs.
+#
+# PSP only (system slug "psp"). No per_system: this template targets only
+# the "psp" slug, same pattern as ppsspp.toml.
+#
+# Returns to caller: [VERIFY] per source — not documented. PPSSPP's
+# pause-menu "exit" returns to the launcher activity stack; Relic should
+# rely on onActivityResult.
+
+id = "ppsspp_legacy"
+display_name = "PPSSPP Legacy"
+package = "org.ppsspp.ppsspplegacy"
+activity = "org.ppsspp.ppsspp.PpssppActivity"
+action = "android.intent.action.VIEW"
+data_mode = "data"
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+# No extras: PPSSPP Legacy reads the ROM entirely from Intent.data, same
+# as the free package.
+# No per_system: this template targets only the "psp" slug.

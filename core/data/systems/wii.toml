@@ -1,0 +1,5 @@
+slug = "wii"
+name = "Wii"
+sort_order = 81
+extensions = ["iso", "wbfs", "rvz", "wia", "wad"]
+theme_key = "wii"
