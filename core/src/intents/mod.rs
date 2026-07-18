@@ -182,8 +182,31 @@ pub fn validate(
 
     // 4. data_mode / data_extra_name pairing; "none" forbids {rom_uri} in extras.
     match template.data_mode {
-        DataMode::Extra if template.data_extra_name.as_deref().unwrap_or("").is_empty() => {
-            errors.push("data_mode = \"extra\" requires a non-empty data_extra_name".into());
+        DataMode::Extra => {
+            match template.data_extra_name.as_deref() {
+                None | Some("") => {
+                    errors
+                        .push("data_mode = \"extra\" requires a non-empty data_extra_name".into());
+                }
+                Some(name) => {
+                    // §5 step 5/6: the shell carries the ROM URI via the extra
+                    // named data_extra_name. Every shipped template makes this
+                    // concrete by listing that extra in [[extras]] with
+                    // value = "{rom_uri}" — catch the case where a template
+                    // declares data_extra_name but forgets to actually wire
+                    // the ROM into extras (or points it at the wrong extra).
+                    let carries_rom = template
+                        .extras
+                        .iter()
+                        .any(|e| e.name == name && e.value == "{rom_uri}");
+                    if !carries_rom {
+                        errors.push(format!(
+                            "data_mode = \"extra\" names data_extra_name '{name}', but no \
+                             [[extras]] entry has name = '{name}' and value = \"{{rom_uri}}\""
+                        ));
+                    }
+                }
+            }
         }
         DataMode::None => {
             for extra in &template.extras {
@@ -457,6 +480,29 @@ mod tests {
         .unwrap();
         let errors = validate(&t, "foo", &[]);
         assert!(errors.iter().any(|e| e.contains("\"true\"/\"false\"")));
+    }
+
+    #[test]
+    fn extra_mode_without_rom_carrying_extra_is_rejected() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.MAIN"
+            data_mode = "extra"
+            data_extra_name = "ROM"
+
+            [[extras]]
+            name = "SOMETHING_ELSE"
+            type = "string"
+            value = "fixed"
+            "#,
+        )
+        .unwrap();
+        let errors = validate(&t, "foo", &[]);
+        assert!(errors.iter().any(|e| e.contains("no [[extras]] entry")));
     }
 
     #[test]
