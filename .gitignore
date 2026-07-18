@@ -9,3 +9,5 @@ Cargo.lock.orig
 /apps/android/**/build
 /apps/android/local.properties
 .DS_Store
+/apps/android/app/src/main/jniLibs/
+/ffi/uniffi/out/
