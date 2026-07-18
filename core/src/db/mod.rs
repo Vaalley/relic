@@ -13,7 +13,10 @@ use rusqlite::Connection;
 use crate::{Error, Result};
 
 /// Ordered, append-only migration list. Index + 1 == resulting `user_version`.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/0001_init.sql"),
+    include_str!("migrations/0002_media_source_path.sql"),
+];
 
 pub struct Db {
     conn: Connection,

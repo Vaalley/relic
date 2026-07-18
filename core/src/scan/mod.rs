@@ -6,6 +6,8 @@
 //! background thread pool, archive enumeration, multi-disc grouping, lazy
 //! hashing, FS watching.
 
+pub mod hash;
+
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::UNIX_EPOCH;

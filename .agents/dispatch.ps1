@@ -5,10 +5,16 @@
 #   .\.agents\dispatch.ps1 -Agent agy   -Task "..." -Background   # fire-and-forget
 param(
     [Parameter(Mandatory = $true)][ValidateSet('devin', 'agy')][string]$Agent,
-    [Parameter(Mandatory = $true)][string]$Task,
+    [string]$Task,
+    # Read the brief from a file instead — avoids shell-quoting hazards for
+    # briefs containing quotes/escapes. Wins over -Task when both are given.
+    [string]$TaskFile,
     [switch]$Background,
     [string]$TimeoutMinutes = '15'
 )
+
+if ($TaskFile) { $Task = Get-Content -Raw $TaskFile }
+if (-not $Task) { throw 'Provide -Task or -TaskFile.' }
 
 $repo = Split-Path $PSScriptRoot -Parent
 $runs = Join-Path $PSScriptRoot 'runs'

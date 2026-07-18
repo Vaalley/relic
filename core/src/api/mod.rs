@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::db::Db;
 use crate::events::Event;
 use crate::launch::{self, EmulatorRow, LaunchPlan, ProfileRow};
+use crate::media::{self, MediaRow, MediaStats};
 use crate::metadata::gamelist::{self, GamelistImportStats};
 use crate::scan::{self, ScanSummary};
 use crate::systems::{self, SystemDef};
@@ -13,6 +14,9 @@ use crate::Result;
 pub struct Engine {
     db: Db,
     systems: Vec<SystemDef>,
+    /// Thumbnail cache next to the DB file; None for in-memory engines
+    /// (discovery still works, thumbnailing is skipped).
+    media_cache_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,14 +40,17 @@ impl Engine {
     /// Open a library database, migrating and seeding the systems registry.
     pub fn open(db_path: &Path) -> Result<Self> {
         let db = Db::open(db_path)?;
-        Self::init(db)
+        let cache = std::path::absolute(db_path)
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("relic-media-cache")));
+        Self::init(db, cache)
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(Db::open_in_memory()?)
+        Self::init(Db::open_in_memory()?, None)
     }
 
-    fn init(db: Db) -> Result<Self> {
+    fn init(db: Db, media_cache_dir: Option<PathBuf>) -> Result<Self> {
         let defs = systems::builtin_systems()?;
         for def in &defs {
             db.conn().execute(
@@ -53,7 +60,11 @@ impl Engine {
                 rusqlite::params![def.slug, def.name, def.sort_order, def.extensions.join(",")],
             )?;
         }
-        Ok(Self { db, systems: defs })
+        Ok(Self {
+            db,
+            systems: defs,
+            media_cache_dir,
+        })
     }
 
     pub fn version(&self) -> &'static str {
@@ -214,6 +225,57 @@ impl Engine {
             }
         }
         Ok(total)
+    }
+
+    /// Discover local artwork for a library (docs/media-conventions.md) and
+    /// refresh the thumbnail cache. Scan first; discovery is per indexed ROM.
+    pub fn refresh_media(
+        &mut self,
+        library_id: i64,
+        sink: &mut dyn FnMut(Event),
+    ) -> Result<MediaStats> {
+        let root: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT root_uri FROM libraries WHERE id=?1",
+                [library_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| crate::Error::LibraryNotFound(library_id))?;
+        let cache = self.media_cache_dir.clone();
+        media::refresh_media(
+            &mut self.db,
+            library_id,
+            &PathBuf::from(root),
+            cache.as_deref(),
+            sink,
+        )
+    }
+
+    pub fn game_media(&self, game_id: i64) -> Result<Vec<MediaRow>> {
+        media::media_for_game(&self.db, game_id)
+    }
+
+    /// Fill missing CRC32/MD5 for up to `limit` indexed files (lazy hashing,
+    /// PLAN.md §4.2). Returns counts; call repeatedly until `hashed == 0`.
+    pub fn hash_pending(
+        &mut self,
+        library_id: Option<i64>,
+        limit: usize,
+        sink: &mut dyn FnMut(Event),
+    ) -> Result<crate::scan::hash::HashStats> {
+        crate::scan::hash::hash_pending(&mut self.db, library_id, limit, sink)
+    }
+
+    /// Absolute path of a cached thumbnail, if the engine has a cache dir.
+    pub fn thumbnail_path(&self, cache_hash: &str) -> Option<PathBuf> {
+        if cache_hash.len() < 2 {
+            return None;
+        }
+        self.media_cache_dir
+            .as_ref()
+            .map(|d| d.join(&cache_hash[..2]).join(format!("{cache_hash}.png")))
     }
 
     /// Register an emulator for the current platform, returning its id.

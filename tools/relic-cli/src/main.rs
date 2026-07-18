@@ -51,6 +51,26 @@ enum Command {
         db: PathBuf,
         root: PathBuf,
     },
+    /// Discover local artwork and refresh the thumbnail cache.
+    RefreshMedia {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        root: PathBuf,
+    },
+    /// Show indexed media for a game id.
+    Media {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        game_id: i64,
+    },
+    /// Compute missing CRC32/MD5 hashes for indexed files.
+    Hash {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        /// Maximum files to hash this run (0 = everything pending).
+        #[arg(long, default_value_t = 0)]
+        limit: usize,
+    },
     /// Register an emulator executable for this platform.
     EmulatorAdd {
         #[arg(long, default_value = "relic.db")]
@@ -111,6 +131,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         Command::Doctor { db } => cmd_doctor(&db),
         Command::ImportGamelists { db, root } => cmd_import_gamelists(&db, &root),
+        Command::RefreshMedia { db, root } => cmd_refresh_media(&db, &root),
+        Command::Media { db, game_id } => cmd_media(&db, game_id),
+        Command::Hash { db, limit } => cmd_hash(&db, limit),
         Command::EmulatorAdd { db, name, exec } => cmd_emulator_add(&db, &name, &exec),
         Command::Emulators { db } => cmd_emulators(&db),
         Command::ProfileAdd {
@@ -184,6 +207,57 @@ fn cmd_import_gamelists(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
         }
     })?;
     println!("matched={} unmatched={}", stats.matched, stats.unmatched);
+    Ok(())
+}
+
+fn cmd_refresh_media(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
+    let name = root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("library")
+        .to_string();
+    let mut engine = Engine::open(db)?;
+    let library_id = engine.add_library(root, &name)?;
+    let stats = engine.refresh_media(library_id, &mut |event| {
+        if let Event::Warning { code, context } = event {
+            eprintln!("warning [{code}]: {context}");
+        }
+    })?;
+    println!(
+        "discovered={} thumbnails_cached={} failed={}",
+        stats.discovered, stats.thumbnails_cached, stats.failed
+    );
+    Ok(())
+}
+
+fn cmd_media(db: &Path, game_id: i64) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    for m in engine.game_media(game_id)? {
+        let thumb = if m.cache_hash.is_empty() {
+            "(from source)".to_string()
+        } else {
+            engine
+                .thumbnail_path(&m.cache_hash)
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()
+        };
+        println!("{:<12} {:<14} {} {}", m.kind, m.source, m.source_path, thumb);
+    }
+    Ok(())
+}
+
+fn cmd_hash(db: &Path, limit: usize) -> Result<(), Box<dyn Error>> {
+    let limit = if limit == 0 { usize::MAX } else { limit };
+    let mut engine = Engine::open(db)?;
+    let stats = engine.hash_pending(None, limit, &mut |event| {
+        if let Event::Warning { code, context } = event {
+            eprintln!("warning [{code}]: {context}");
+        }
+    })?;
+    println!(
+        "hashed={} skipped={} failed={}",
+        stats.hashed, stats.skipped, stats.failed
+    );
     Ok(())
 }
 

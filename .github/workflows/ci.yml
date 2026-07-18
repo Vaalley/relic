@@ -30,6 +30,12 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
+      # CLI end-to-end regression against the committed fixture library
+      # (tools/e2e). pwsh is preinstalled on all GitHub runners.
+      - name: e2e
+        run: ./tools/e2e/run.ps1
+        shell: pwsh
+
   offline-only:
     runs-on: ubuntu-latest
     steps:
