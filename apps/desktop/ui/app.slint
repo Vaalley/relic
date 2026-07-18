@@ -1,0 +1,28 @@
+// Relic desktop shell — toolchain proof-of-concept window (ADR-002, Slint).
+// Not the real UI: PLAN.md Phase 2 (system browser, grid, detail, launch)
+// starts from here once implementation begins.
+
+export component MainWindow inherits Window {
+    title: "Relic";
+    preferred-width: 800px;
+    preferred-height: 600px;
+    background: #1a1a1a;
+
+    in property <string> status-line;
+
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: "Relic";
+            font-size: 32px;
+            color: white;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: status-line;
+            font-size: 14px;
+            color: #999999;
+            horizontal-alignment: center;
+        }
+    }
+}

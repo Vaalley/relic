@@ -12,3 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 relic-core.workspace = true
+slint = "1.17"
+
+[build-dependencies]
+slint-build = "1.17"
