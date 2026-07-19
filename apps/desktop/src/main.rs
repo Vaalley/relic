@@ -1,10 +1,12 @@
 //! Relic desktop shell (Phase 2, early).
 //!
 //! UI stack decision (ADR-002, `docs/adr/0002-desktop-ui-stack.md`) is settled:
-//! Slint. This is a system/game browser skeleton — real `Engine` data, no
-//! detail page, launch, or gamepad input yet (PLAN.md Phase 2 exit criteria
-//! are still ahead). Colors resolve through `relic-themes`' default theme
-//! (PLAN.md section 6 layer 1) into the `Palette` Slint global.
+//! Slint. This is a system/game browser skeleton over real `Engine` data;
+//! gamepad input is the one PLAN.md Phase 2 exit criterion still missing.
+//! Colors resolve through `relic-themes`' default theme (PLAN.md section 6
+//! layer 1) into the `Palette` Slint global. Emulator auto-detection
+//! (`emulator_detect`) covers the "detect emulators" half of the first-run
+//! wizard requirement.
 //!
 //! The library database is a real file under the OS data dir (persists
 //! across launches — added libraries stay added). In debug builds, if that
@@ -12,6 +14,8 @@
 //! seed so the views aren't empty before a real folder is added.
 
 slint::include_modules!();
+
+mod emulator_detect;
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -257,6 +261,37 @@ fn main() -> Result<(), slint::PlatformError> {
             };
             if let Some(window) = window_weak.upgrade() {
                 window.set_emulator_exec_input(path.to_string_lossy().into_owned().into());
+            }
+        }
+    });
+
+    window.on_detect_emulators_requested({
+        let window_weak = window.as_weak();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let path_var = std::env::var("PATH").unwrap_or_default();
+            let found = emulator_detect::detect_emulators(&path_var);
+            match found.first() {
+                Some(emu) => {
+                    window.set_emulator_name_input(emu.name.clone().into());
+                    window.set_emulator_exec_input(emu.exec.clone().into());
+                    let extra = if found.len() > 1 {
+                        format!(
+                            " ({} more found — Browse… to pick a different one)",
+                            found.len() - 1
+                        )
+                    } else {
+                        String::new()
+                    };
+                    window.set_status_line(format!("Detected {}{extra}", emu.name).into());
+                }
+                None => {
+                    window.set_status_line(
+                        "No known emulators found on PATH — use Browse… to pick one.".into(),
+                    );
+                }
             }
         }
     });

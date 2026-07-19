@@ -4709,6 +4709,7 @@ dependencies = [
  "rusqlite",
  "slint",
  "slint-build",
+ "tempfile",
 ]
 
 [[package]]

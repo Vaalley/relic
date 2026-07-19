@@ -71,6 +71,7 @@ export component MainWindow inherits Window {
     callback add-library-requested();
     callback game-launch-requested(int);
     callback browse-emulator-exec();
+    callback detect-emulators-requested();
     callback save-launch-profile();
     callback stats-toggled();
     callback scraper-toggled();
@@ -180,6 +181,13 @@ export component MainWindow inherits Window {
                         text: "Browse…";
                         clicked => {
                             browse-emulator-exec();
+                        }
+                    }
+
+                    Button {
+                        text: "Detect";
+                        clicked => {
+                            detect-emulators-requested();
                         }
                     }
 
