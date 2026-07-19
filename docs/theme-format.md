@@ -2,19 +2,24 @@
 
 > Companion to `PLAN.md` §6. Spec for the layer-1 theme format: design tokens
 > (colors, typography, shape, sounds) loaded from a `theme.toml` manifest.
-> Status: **Draft, Phase 5** — authoritative once the `modules/themes` engine
-> and `relic-cli theme validate` ship. Until then `themes/default/theme.toml`
-> is provisional and fields may move or rename.
+> Status: **Implemented, Phase 5.** `modules/themes` (`load_theme_dir`) loads
+> and validates a theme directory; both shells let the user pick one, apply
+> its resolved tokens immediately, persist the choice via `Engine::
+> set_setting`, and hot-reload on a `theme.toml` mtime change (desktop: a
+> polling `slint::Timer`; Android: on `onResume`, alongside rescan-on-resume).
+> Fields may still move or rename until layout themes (layer 2) land.
 
 ---
 
 ## 1. Status
 
-**Draft, Phase 5.** This document defines the layer-1 theme format described in
-`PLAN.md` §6. It is the contract between three consumers:
+**Implemented, Phase 5** (layer 1 — design tokens only; layer 2 layout themes
+are post-1.0, PLAN.md §9). This document defines the layer-1 theme format
+described in `PLAN.md` §6. It is the contract between three consumers:
 
-- `modules/themes` — the loader and resolver.
-- `apps/desktop` and `apps/android` — the shells that consume resolved tokens.
+- `modules/themes` — the loader (`load_theme_dir`) and resolver (`resolve`).
+- `apps/desktop` and `apps/android` — the shells that let a user pick a theme
+  directory, apply its resolved tokens, and hot-reload on changes.
 - `relic-cli theme validate` — the validator that enforces the rules in §7.
 
 The bundled `themes/default/theme.toml` is the canonical example and the
