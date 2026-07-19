@@ -1,6 +1,9 @@
 package dev.relic.android
 
 import android.app.Application
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -73,6 +76,16 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     var pendingMatchGameNames by mutableStateOf<Map<Long, String>>(emptyMap())
         private set
 
+    /**
+     * A launch that fired an Intent successfully but whose play session is
+     * still open — closed out in [endPendingSession], called from
+     * `MainActivity.onResume` when Relic regains focus (there's no other
+     * session-end signal available; see `IntentLauncher`'s doc comment).
+     */
+    private data class PendingLaunchSession(val sessionId: Long, val packageName: String, val romUri: Uri)
+
+    private var pendingSession: PendingLaunchSession? = null
+
     /** Games as the grid should show them (favorites filter is client-side). */
     val visibleGames: List<GameInfo>
         get() = if (favoritesOnly) games.filter { it.favorite } else games
@@ -80,6 +93,39 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     fun boxartPath(gameId: Long): String? = engine.boxartPath(gameId)
 
     fun defaultCore(slug: String): String? = engine.systemDefaultCore(slug)
+
+    /** Called after [IntentLauncher.launch] succeeds — starts the play session. */
+    fun recordLaunchStarted(gameId: Long, packageName: String, romUri: Uri) {
+        val sessionId =
+            try {
+                engine.startPlaySession(gameId)
+            } catch (e: Exception) {
+                status = "Couldn't record play session: ${e.message}"
+                return
+            }
+        pendingSession = PendingLaunchSession(sessionId, packageName, romUri)
+    }
+
+    /**
+     * Ends the pending play session (if any) and revokes the ROM URI grant.
+     * Safe to call unconditionally — a no-op when nothing is pending.
+     */
+    fun endPendingSession(context: Context) {
+        val session = pendingSession ?: return
+        pendingSession = null
+        try {
+            engine.endPlaySession(session.sessionId)
+        } catch (_: Exception) {
+            // Best-effort: the session row staying open just means its
+            // duration is missing from stats, not a correctness issue.
+        }
+        try {
+            context.revokeUriPermission(session.packageName, session.romUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+            // Grant revocation failing is harmless here: it's scoped to one
+            // file and one package, and drops on its own when the app dies.
+        }
+    }
 
     fun selectSystem(slug: String?) {
         selectedSystem = slug

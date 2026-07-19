@@ -3,6 +3,7 @@ package dev.relic.android
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.core.content.FileProvider
 import uniffi.relic_ffi.intentTemplatesForSystem
 import uniffi.relic_ffi.resolveIntent
@@ -12,35 +13,42 @@ import java.io.File
  * Data-driven Android launch resolver (docs/android-intents.md): builds and
  * fires an explicit [Intent] from the TOML templates under
  * `core/data/intents/`, via relic-core's `intents::resolve`, exposed over
- * UniFFI as
- * `intentTemplatesForSystem`/`resolveIntent`. Replaces the RetroArch-only
- * alpha hardcoding that used to live here as `RetroArchLauncher`.
+ * UniFFI as `intentTemplatesForSystem`/`resolveIntent`. Replaces the
+ * RetroArch-only alpha hardcoding that used to live here as
+ * `RetroArchLauncher`.
  *
- * Note: this grants read access to the ROM's content:// URI via
- * [Context.grantUriPermission] but does not yet revoke it on session end
- * (docs/android-intents.md §5 step 10) — there's no session-lifecycle
- * watchdog in this codebase yet to hook that into. The grant is scoped to
- * one file and one package, and Android drops it when Relic's process dies.
+ * On success, the caller (`RelicViewModel.recordLaunchStarted`) starts a play
+ * session and remembers the granted package + URI so `MainActivity.onResume`
+ * can record the session's end and revoke the grant when the emulator
+ * returns control — there's no session-lifecycle watchdog beyond that
+ * resume hook (docs/android-intents.md §5 step 10 relies on it).
  */
 object IntentLauncher {
 
-    /** Returns null on success, else a human-readable failure reason. */
+    sealed class LaunchResult {
+        data class Success(val packageName: String, val romUri: Uri) : LaunchResult()
+
+        data class Failure(val message: String) : LaunchResult()
+    }
+
     fun launch(
         context: Context,
         systemSlug: String,
         romAbsolutePath: String,
         romRelPath: String,
         defaultCore: String?,
-    ): String? {
+    ): LaunchResult {
         val candidates = intentTemplatesForSystem(systemSlug)
         if (candidates.isEmpty()) {
-            return "No emulator template registered for system '$systemSlug'"
+            return LaunchResult.Failure("No emulator template registered for system '$systemSlug'")
         }
 
         val template =
             candidates.firstOrNull { isInstalled(context, it.`package`) }
-                ?: return "None of the candidate emulators are installed (tried " +
-                    "${candidates.joinToString { it.displayName }})"
+                ?: return LaunchResult.Failure(
+                    "None of the candidate emulators are installed (tried " +
+                        "${candidates.joinToString { it.displayName }})",
+                )
 
         val romUri =
             FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", File(romAbsolutePath))
@@ -56,7 +64,7 @@ object IntentLauncher {
 
         val resolved =
             resolveIntent(template.id, systemSlug, romUri.toString(), romRelPath, corePath)
-                ?: return "Failed to resolve intent template '${template.id}'"
+                ?: return LaunchResult.Failure("Failed to resolve intent template '${template.id}'")
 
         val intent = Intent(resolved.action)
         intent.setClassName(resolved.`package`, resolved.activity)
@@ -86,9 +94,9 @@ object IntentLauncher {
 
         return try {
             context.startActivity(intent)
-            null
+            LaunchResult.Success(resolved.`package`, romUri)
         } catch (e: Exception) {
-            "Launch failed: ${e.message}"
+            LaunchResult.Failure("Launch failed: ${e.message}")
         }
     }
 

@@ -150,6 +150,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Relic regaining focus is the only signal available that a game
+        // launched via IntentLauncher returned control (docs/android-intents.md
+        // §5 step 10) — no per-emulator result contract to rely on instead.
+        vm.endPendingSession(this)
         hasAccess = Environment.isExternalStorageManager()
         if (vm.hasLibrary && hasAccess) {
             vm.refresh()
@@ -490,7 +494,7 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.height(8.dp))
                     Button(
-                        onClick = { launchGame(game.systemSlug, game.relPath) },
+                        onClick = { launchGame(game) },
                         modifier = Modifier.focusRequester(playFocus),
                     ) {
                         Text("▶ Play")
@@ -535,13 +539,20 @@ class MainActivity : ComponentActivity() {
         vm.status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 
-    private fun launchGame(systemSlug: String, relPath: String?) {
+    private fun launchGame(game: GameInfo) {
+        val relPath = game.relPath
         if (relPath == null) {
             vm.status = "No file recorded for this game"
             return
         }
         val rom = File(vm.libraryPath, relPath).absolutePath
-        val error = IntentLauncher.launch(this, systemSlug, rom, relPath, vm.defaultCore(systemSlug))
-        if (error != null) vm.status = error
+        when (
+            val result =
+                IntentLauncher.launch(this, game.systemSlug, rom, relPath, vm.defaultCore(game.systemSlug))
+        ) {
+            is IntentLauncher.LaunchResult.Success ->
+                vm.recordLaunchStarted(game.id, result.packageName, result.romUri)
+            is IntentLauncher.LaunchResult.Failure -> vm.status = result.message
+        }
     }
 }
