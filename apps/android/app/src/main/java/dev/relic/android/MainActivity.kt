@@ -30,7 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -197,6 +197,11 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun SetupScreen() {
+        // Relic is the HOME app here (no library yet is still the app's
+        // root state) — back must not fall through to the default finish().
+        BackHandler { }
+        val browseFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { browseFocus.requestFocus() }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Welcome to Relic", style = MaterialTheme.typography.headlineMedium)
             Text("Point Relic at your ROM folder (one subfolder per system, e.g. ROMs/snes).")
@@ -206,7 +211,10 @@ class MainActivity : ComponentActivity() {
                 label = { Text("ROM folder") },
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedButton(onClick = { pickFolder.launch(null) }) {
+            OutlinedButton(
+                onClick = { pickFolder.launch(null) },
+                modifier = Modifier.focusRequester(browseFocus),
+            ) {
                 Text("Browse…")
             }
             if (!hasAccess) {
@@ -228,6 +236,14 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun LibraryScreen() {
+        // Root screen of the HOME app — back must not fall through to the
+        // default finish() (there is nothing "behind" the launcher).
+        BackHandler { }
+        val firstTileFocus = remember { FocusRequester() }
+        val searchFocus = remember { FocusRequester() }
+        LaunchedEffect(vm.visibleGames.firstOrNull()?.id) {
+            if (vm.visibleGames.isNotEmpty()) firstTileFocus.requestFocus() else searchFocus.requestFocus()
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
@@ -261,7 +277,7 @@ class MainActivity : ComponentActivity() {
                     onValueChange = { vm.setSearchQuery(it) },
                     label = { Text("Search") },
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(searchFocus),
                 )
                 OutlinedButton(onClick = { vm.scanLibrary() }, enabled = !vm.scanning) {
                     Text(if (vm.scanning) "Scanning…" else "Rescan")
@@ -289,7 +305,9 @@ class MainActivity : ComponentActivity() {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(vm.visibleGames, key = { it.id }) { game -> GameTile(game) }
+                itemsIndexed(vm.visibleGames, key = { _, g -> g.id }) { index, game ->
+                    GameTile(game, focusRequester = if (index == 0) firstTileFocus else null)
+                }
             }
         }
     }
@@ -302,6 +320,8 @@ class MainActivity : ComponentActivity() {
         val collection = vm.selectedCollection
         if (collection == null) {
             var newName by remember { mutableStateOf("") }
+            val backFocus = remember { FocusRequester() }
+            LaunchedEffect(Unit) { backFocus.requestFocus() }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Collections", style = MaterialTheme.typography.headlineMedium)
                 Row(
@@ -341,12 +361,17 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                OutlinedButton(onClick = { vm.closeCollections() }) {
+                OutlinedButton(onClick = { vm.closeCollections() }, modifier = Modifier.focusRequester(backFocus)) {
                     Text("Back")
                 }
                 vm.status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         } else {
+            val firstTileFocus = remember { FocusRequester() }
+            val detailBackFocus = remember { FocusRequester() }
+            LaunchedEffect(vm.collectionGames.firstOrNull()?.id) {
+                if (vm.collectionGames.isNotEmpty()) firstTileFocus.requestFocus() else detailBackFocus.requestFocus()
+            }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(collection.name, style = MaterialTheme.typography.headlineMedium)
                 LazyVerticalGrid(
@@ -355,9 +380,14 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize().weight(1f),
                 ) {
-                    items(vm.collectionGames, key = { it.id }) { game -> GameTile(game) }
+                    itemsIndexed(vm.collectionGames, key = { _, g -> g.id }) { index, game ->
+                        GameTile(game, focusRequester = if (index == 0) firstTileFocus else null)
+                    }
                 }
-                OutlinedButton(onClick = { vm.closeCollectionDetail() }) {
+                OutlinedButton(
+                    onClick = { vm.closeCollectionDetail() },
+                    modifier = Modifier.focusRequester(detailBackFocus),
+                ) {
                     Text("Back")
                 }
             }
@@ -367,6 +397,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun StatsScreen() {
         BackHandler { vm.closeStats() }
+        val backFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { backFocus.requestFocus() }
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
@@ -384,7 +416,7 @@ class MainActivity : ComponentActivity() {
                 Text("Most Played", style = MaterialTheme.typography.titleMedium)
                 vm.mostPlayed.forEach { g -> StatsRow(g) }
             }
-            OutlinedButton(onClick = { vm.closeStats() }) {
+            OutlinedButton(onClick = { vm.closeStats() }, modifier = Modifier.focusRequester(backFocus)) {
                 Text("Back")
             }
         }
@@ -404,6 +436,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun ScraperMatchesScreen() {
         BackHandler { vm.closeScraperMatches() }
+        val backFocus = remember { FocusRequester() }
+        LaunchedEffect(Unit) { backFocus.requestFocus() }
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
@@ -419,7 +453,7 @@ class MainActivity : ComponentActivity() {
                     vm.pendingMatches.forEach { match -> PendingMatchRow(match) }
                 }
             }
-            OutlinedButton(onClick = { vm.closeScraperMatches() }) {
+            OutlinedButton(onClick = { vm.closeScraperMatches() }, modifier = Modifier.focusRequester(backFocus)) {
                 Text("Back")
             }
         }
@@ -448,7 +482,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun GameTile(game: GameInfo) {
+    private fun GameTile(game: GameInfo, focusRequester: FocusRequester? = null) {
         // Focus ring for controller navigation: gamepad users need to see
         // where they are; touch users never trigger the focused state.
         val interaction = remember { MutableInteractionSource() }
@@ -457,6 +491,7 @@ class MainActivity : ComponentActivity() {
             onClick = { vm.openGame(game) },
             interactionSource = interaction,
             border = if (focused) BorderStroke(3.dp, MaterialTheme.colorScheme.primary) else null,
+            modifier = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
         ) {
             Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 val art = vm.boxartPath(game.id)
