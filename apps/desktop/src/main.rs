@@ -60,12 +60,15 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let engine = Rc::new(RefCell::new(engine));
     let current_system: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+    let current_games: Rc<RefCell<Vec<relic_core::api::GameRow>>> =
+        Rc::new(RefCell::new(Vec::new()));
 
     let refresh = {
         let window_weak = window.as_weak();
         let engine = Rc::clone(&engine);
         let system_slugs = Rc::clone(&system_slugs);
         let current_system = Rc::clone(&current_system);
+        let current_games = Rc::clone(&current_games);
         move |search: &str| {
             let Some(window) = window_weak.upgrade() else {
                 return;
@@ -82,11 +85,13 @@ fn main() -> Result<(), slint::PlatformError> {
             let items: Vec<GameItem> = games
                 .iter()
                 .map(|g| GameItem {
+                    id: g.id as i32,
                     name: g.name.clone().into(),
                     favorite: g.favorite,
                 })
                 .collect();
             window.set_games_model(ModelRc::new(VecModel::from(items)));
+            *current_games.borrow_mut() = games;
         }
     };
 
@@ -110,8 +115,33 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     });
 
-    window.on_search_edited(move |text| {
-        refresh(text.as_str());
+    window.on_search_edited({
+        let refresh = refresh.clone();
+        move |text| {
+            refresh(text.as_str());
+        }
+    });
+
+    window.on_favorite_toggled({
+        let window_weak = window.as_weak();
+        move |id| {
+            let is_favorite = current_games
+                .borrow()
+                .iter()
+                .find(|g| g.id as i32 == id)
+                .map(|g| g.favorite);
+            let Some(was_favorite) = is_favorite else {
+                return;
+            };
+            if engine
+                .borrow_mut()
+                .set_favorite(id as i64, !was_favorite)
+                .is_ok()
+            {
+                let search = window_weak.upgrade().map(|w| w.get_search_text());
+                refresh(search.as_deref().unwrap_or(""));
+            }
+        }
     });
 
     window.run()

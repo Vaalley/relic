@@ -6,6 +6,7 @@
 import { LineEdit, ListView, StandardListView } from "std-widgets.slint";
 
 export struct GameItem {
+    id: int,
     name: string,
     favorite: bool,
 }
@@ -24,6 +25,7 @@ export component MainWindow inherits Window {
 
     callback system-selected(int);
     callback search-edited(string);
+    callback favorite-toggled(int);
 
     VerticalLayout {
         padding: 12px;
@@ -83,10 +85,17 @@ export component MainWindow inherits Window {
                             spacing: 6px;
                             alignment: start;
 
-                            Text {
-                                text: game.favorite ? "★" : " ";
-                                color: #e0c341;
-                                font-size: 13px;
+                            star-area := TouchArea {
+                                width: 16px;
+                                clicked => {
+                                    favorite-toggled(game.id);
+                                }
+
+                                Text {
+                                    text: game.favorite ? "★" : "☆";
+                                    color: #e0c341;
+                                    font-size: 13px;
+                                }
                             }
 
                             Text {
