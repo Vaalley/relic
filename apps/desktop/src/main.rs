@@ -91,6 +91,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let system_slugs: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let current_system: Rc<Cell<usize>> = Rc::new(Cell::new(0));
     let current_games: Rc<RefCell<Vec<GameRow>>> = Rc::new(RefCell::new(Vec::new()));
+    let show_stats: Rc<Cell<bool>> = Rc::new(Cell::new(false));
 
     let refresh_games = {
         let window_weak = window.as_weak();
@@ -322,6 +323,58 @@ fn main() -> Result<(), slint::PlatformError> {
             window.set_status_line(format!("core {} — scanned {name}", eng.version()).into());
             drop(eng);
             refresh_systems();
+        }
+    });
+
+    window.on_stats_toggled({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let show_stats = Rc::clone(&show_stats);
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let new_value = !show_stats.get();
+            show_stats.set(new_value);
+            window.set_show_stats(new_value);
+            if !new_value {
+                return;
+            }
+
+            let eng = engine.borrow();
+
+            let to_rows = |stats: Vec<relic_core::stats::GameStats>| -> Vec<StatRow> {
+                stats
+                    .iter()
+                    .map(|g| StatRow {
+                        name: g.name.clone().into(),
+                        subtitle: format!(
+                            "{} — {}x, {}m total, last {}",
+                            g.system_slug,
+                            g.play_count,
+                            g.total_seconds / 60,
+                            g.last_played_at
+                                .map(|t| t.to_string())
+                                .unwrap_or_else(|| "-".into())
+                        )
+                        .into(),
+                    })
+                    .collect()
+            };
+
+            let recent_rows = eng.recently_played(20).map(to_rows).unwrap_or_default();
+            let most_played_rows = eng.most_played(20).map(to_rows).unwrap_or_default();
+            let summary = match eng.play_totals() {
+                Ok((sessions, total_seconds)) => {
+                    format!("{sessions} sessions, {}m total", total_seconds / 60)
+                }
+                Err(_) => "stats unavailable".to_string(),
+            };
+            drop(eng);
+
+            window.set_recent_model(ModelRc::new(VecModel::from(recent_rows)));
+            window.set_most_played_model(ModelRc::new(VecModel::from(most_played_rows)));
+            window.set_stats_summary(summary.into());
         }
     });
 

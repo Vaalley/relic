@@ -12,6 +12,11 @@ export struct GameItem {
     favorite: bool,
 }
 
+export struct StatRow {
+    name: string,
+    subtitle: string,
+}
+
 // Design tokens (PLAN.md section 6 layer 1), populated from relic-themes'
 // resolved default theme in main.rs. Defaults here match the prior
 // hardcoded look so the UI degrades sanely if Rust never sets them.
@@ -39,6 +44,10 @@ export component MainWindow inherits Window {
     in-out property <string> emulator-name-input;
     in-out property <string> emulator-exec-input;
     in-out property <string> emulator-args-input: "{rom}";
+    in property <bool> show-stats: false;
+    in property <[StatRow]> recent-model;
+    in property <[StatRow]> most-played-model;
+    in property <string> stats-summary;
 
     callback system-selected(int);
     callback search-edited(string);
@@ -47,6 +56,7 @@ export component MainWindow inherits Window {
     callback game-launch-requested(int);
     callback browse-emulator-exec();
     callback save-launch-profile();
+    callback stats-toggled();
 
     VerticalLayout {
         padding: 12px;
@@ -69,9 +79,16 @@ export component MainWindow inherits Window {
                     add-library-requested();
                 }
             }
+
+            Button {
+                text: "Stats";
+                clicked => {
+                    stats-toggled();
+                }
+            }
         }
 
-        HorizontalLayout {
+        if !show-stats : HorizontalLayout {
             spacing: 12px;
 
             VerticalLayout {
@@ -185,6 +202,76 @@ export component MainWindow inherits Window {
                                 font-size: 13px;
                                 vertical-alignment: center;
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        if show-stats : VerticalLayout {
+            spacing: 8px;
+
+            Text {
+                text: stats-summary;
+                color: Palette.text;
+                font-size: 14px;
+            }
+
+            Text {
+                text: "Recently Played";
+                font-size: 16px;
+                color: Palette.text-dim;
+            }
+
+            ListView {
+                height: 220px;
+                for row in recent-model: Rectangle {
+                    height: 34px;
+
+                    VerticalLayout {
+                        padding-left: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: row.name;
+                            color: Palette.text;
+                            font-size: 13px;
+                        }
+
+                        Text {
+                            text: row.subtitle;
+                            color: Palette.text-dim;
+                            font-size: 11px;
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Most Played";
+                font-size: 16px;
+                color: Palette.text-dim;
+            }
+
+            ListView {
+                height: 220px;
+                for row in most-played-model: Rectangle {
+                    height: 34px;
+
+                    VerticalLayout {
+                        padding-left: 4px;
+                        alignment: center;
+
+                        Text {
+                            text: row.name;
+                            color: Palette.text;
+                            font-size: 13px;
+                        }
+
+                        Text {
+                            text: row.subtitle;
+                            color: Palette.text-dim;
+                            font-size: 11px;
                         }
                     }
                 }
