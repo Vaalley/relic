@@ -2,8 +2,9 @@
 //!
 //! UI stack decision (ADR-002, `docs/adr/0002-desktop-ui-stack.md`) is settled:
 //! Slint. This is a system/game browser skeleton — real `Engine` data, no
-//! detail page, launch, gamepad input, or theming yet (PLAN.md Phase 2 exit
-//! criteria are still ahead).
+//! detail page, launch, or gamepad input yet (PLAN.md Phase 2 exit criteria
+//! are still ahead). Colors resolve through `relic-themes`' default theme
+//! (PLAN.md section 6 layer 1) into the `Palette` Slint global.
 //!
 //! The library database is a real file under the OS data dir (persists
 //! across launches — added libraries stay added). In debug builds, if that
@@ -31,6 +32,24 @@ fn app_db_path() -> PathBuf {
         .join("library.db")
 }
 
+/// Parse a `relic-themes`-emitted `"#rrggbb"` string into a Slint color.
+/// Never panics: malformed input (which `relic-themes` never produces, per
+/// its "deterministic and never raises" guarantee) falls back to black.
+fn parse_hex_color(s: &str) -> slint::Color {
+    let hex = s.strip_prefix('#').unwrap_or(s);
+    let parse_channel = |range| u8::from_str_radix(&hex[range], 16).ok();
+    if hex.len() == 6 {
+        if let (Some(r), Some(g), Some(b)) = (
+            parse_channel(0..2),
+            parse_channel(2..4),
+            parse_channel(4..6),
+        ) {
+            return slint::Color::from_rgb_u8(r, g, b);
+        }
+    }
+    slint::Color::from_rgb_u8(0, 0, 0)
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let db_path = app_db_path();
     if let Some(parent) = db_path.parent() {
@@ -53,6 +72,19 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     let window = MainWindow::new()?;
+
+    let tokens = relic_themes::resolve(
+        Some(relic_themes::default_theme()),
+        relic_themes::Variant::Dark,
+    );
+    let palette = window.global::<Palette>();
+    palette.set_bg(parse_hex_color(&tokens.colors.bg));
+    palette.set_surface(parse_hex_color(&tokens.colors.surface));
+    palette.set_text(parse_hex_color(&tokens.colors.text));
+    palette.set_text_dim(parse_hex_color(&tokens.colors.text_dim));
+    palette.set_accent(parse_hex_color(&tokens.colors.accent));
+    palette.set_favorite(parse_hex_color(&tokens.colors.favorite));
+
     window.set_status_line(format!("core {} — {}", engine.version(), db_path.display()).into());
 
     let engine = Rc::new(RefCell::new(engine));

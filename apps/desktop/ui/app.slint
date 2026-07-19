@@ -1,7 +1,8 @@
 // Relic desktop shell — Phase 2 system/game browser skeleton (ADR-002, Slint).
 // Real data from relic-core via Engine, wired up in src/main.rs. Still missing
-// from PLAN.md Phase 2 scope: detail page, search, favorites toggle, launch,
-// first-run wizard, gamepad input, design-token theming.
+// from PLAN.md Phase 2 scope: detail page, first-run wizard, gamepad input.
+// Colors come from the `Palette` global, populated in main.rs via
+// relic-themes' resolved default theme (PLAN.md section 6 layer 1).
 
 import { Button, LineEdit, ListView, StandardListView } from "std-widgets.slint";
 
@@ -11,11 +12,23 @@ export struct GameItem {
     favorite: bool,
 }
 
+// Design tokens (PLAN.md section 6 layer 1), populated from relic-themes'
+// resolved default theme in main.rs. Defaults here match the prior
+// hardcoded look so the UI degrades sanely if Rust never sets them.
+export global Palette {
+    in property <color> bg: #1a1a1a;
+    in property <color> surface: #262626;
+    in property <color> text: white;
+    in property <color> text-dim: #cccccc;
+    in property <color> accent: #e0c341;
+    in property <color> favorite: #e0c341;
+}
+
 export component MainWindow inherits Window {
     title: "Relic";
     preferred-width: 900px;
     preferred-height: 600px;
-    background: #1a1a1a;
+    background: Palette.bg;
 
     in property <string> status-line;
     in property <[StandardListViewItem]> systems-model;
@@ -47,7 +60,7 @@ export component MainWindow inherits Window {
                 text: "Relic";
                 font-size: 28px;
                 font-weight: 700;
-                color: white;
+                color: Palette.text;
             }
 
             Button {
@@ -68,7 +81,7 @@ export component MainWindow inherits Window {
                 Text {
                     text: "Systems";
                     font-size: 16px;
-                    color: #cccccc;
+                    color: Palette.text-dim;
                 }
 
                 StandardListView {
@@ -85,7 +98,7 @@ export component MainWindow inherits Window {
                 Text {
                     text: games-heading;
                     font-size: 16px;
-                    color: #cccccc;
+                    color: Palette.text-dim;
                 }
 
                 LineEdit {
@@ -98,7 +111,7 @@ export component MainWindow inherits Window {
 
                 Text {
                     text: emulator-status;
-                    color: #e0c341;
+                    color: Palette.accent;
                     font-size: 11px;
                     wrap: word-wrap;
                 }
@@ -161,14 +174,14 @@ export component MainWindow inherits Window {
 
                                 Text {
                                     text: game.favorite ? "★" : "☆";
-                                    color: #e0c341;
+                                    color: Palette.favorite;
                                     font-size: 13px;
                                 }
                             }
 
                             Text {
                                 text: game.name;
-                                color: white;
+                                color: Palette.text;
                                 font-size: 13px;
                                 vertical-alignment: center;
                             }
@@ -180,7 +193,7 @@ export component MainWindow inherits Window {
 
         Text {
             text: status-line;
-            color: #999999;
+            color: Palette.text-dim;
             font-size: 12px;
         }
     }
