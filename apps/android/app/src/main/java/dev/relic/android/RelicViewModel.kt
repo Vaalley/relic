@@ -21,6 +21,9 @@ import uniffi.relic_ffi.PendingMatchInfo
 import uniffi.relic_ffi.PlayTotals
 import uniffi.relic_ffi.RelicEngine
 import uniffi.relic_ffi.SystemInfo
+import uniffi.relic_ffi.ThemeColors
+import uniffi.relic_ffi.themeColors
+import uniffi.relic_ffi.themeColorsForDir
 
 /**
  * Bridges the Rust engine (via UniFFI) to Compose state. All engine calls run
@@ -85,6 +88,62 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     private data class PendingLaunchSession(val sessionId: Long, val packageName: String, val romUri: Uri)
 
     private var pendingSession: PendingLaunchSession? = null
+
+    /** Currently active theme directory (a plain path — see `applyThemeDir`), if any. */
+    private var themeDir: String? = null
+    private var themeMtime: Long = 0L
+
+    /** Resolved token colors the UI applies at the MaterialTheme root. */
+    var themeTokens by mutableStateOf(loadInitialTheme())
+        private set
+
+    private fun loadInitialTheme(): ThemeColors {
+        val dir =
+            try {
+                engine.getSetting("theme_dir")
+            } catch (e: Exception) {
+                null
+            }
+        if (dir == null) return themeColors(true)
+        themeDir = dir
+        themeMtime = File(dir, "theme.toml").lastModified()
+        val result = themeColorsForDir(dir, true)
+        if (result.error != null) status = "Theme error, using default: ${result.error}"
+        return result.colors
+    }
+
+    /** Called after the user picks a theme folder — validates, applies, and persists it. */
+    fun applyThemeDir(path: String) {
+        val result = themeColorsForDir(path, true)
+        themeTokens = result.colors
+        if (result.error != null) {
+            status = "Theme error, using default: ${result.error}"
+            return
+        }
+        themeDir = path
+        themeMtime = File(path, "theme.toml").lastModified()
+        try {
+            engine.setSetting("theme_dir", path)
+            status = "Theme applied: $path"
+        } catch (e: Exception) {
+            status = "Theme applied but not saved: ${e.message}"
+        }
+    }
+
+    /**
+     * Hot reload: called from `MainActivity.onResume` (same "regaining focus
+     * is the refresh signal" pattern as rescan-on-resume) — re-applies the
+     * active theme directory's tokens if `theme.toml`'s mtime changed since
+     * it was last loaded.
+     */
+    fun refreshThemeIfChanged() {
+        val dir = themeDir ?: return
+        val mtime = File(dir, "theme.toml").lastModified()
+        if (mtime != themeMtime) {
+            themeMtime = mtime
+            themeTokens = themeColorsForDir(dir, true).colors
+        }
+    }
 
     /** Games as the grid should show them (favorites filter is client-side). */
     val visibleGames: List<GameInfo>

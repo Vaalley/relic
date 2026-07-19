@@ -57,7 +57,6 @@ import androidx.compose.ui.graphics.Color
 import uniffi.relic_ffi.GameInfo
 import uniffi.relic_ffi.GameStatsInfo
 import uniffi.relic_ffi.PendingMatchInfo
-import uniffi.relic_ffi.themeColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -96,6 +95,17 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+    private val pickThemeFolder =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@registerForActivityResult
+            val path = treeUriToPath(uri)
+            if (path != null) {
+                vm.applyThemeDir(path)
+            } else {
+                vm.status = "Couldn't turn that folder into a file path"
+            }
+        }
+
     /**
      * SAF tree URI → plain file path, valid while the app holds all-files
      * access. "primary:ROMs" → /storage/emulated/0/ROMs; "1234-ABCD:ROMs"
@@ -120,7 +130,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val tokens = themeColors(true) // dark; light-mode toggle is a later feature
+            val tokens = vm.themeTokens // dark; light-mode toggle is a later feature
             val colorScheme =
                 darkColorScheme(
                     background = parseHexColor(tokens.bg),
@@ -154,6 +164,7 @@ class MainActivity : ComponentActivity() {
         // launched via IntentLauncher returned control (docs/android-intents.md
         // §5 step 10) — no per-emulator result contract to rely on instead.
         vm.endPendingSession(this)
+        vm.refreshThemeIfChanged()
         hasAccess = Environment.isExternalStorageManager()
         if (vm.hasLibrary && hasAccess) {
             vm.refresh()
@@ -266,6 +277,9 @@ class MainActivity : ComponentActivity() {
                 }
                 OutlinedButton(onClick = { vm.openScraperMatches() }) {
                     Text("Scraper")
+                }
+                OutlinedButton(onClick = { pickThemeFolder.launch(null) }) {
+                    Text("Theme")
                 }
             }
             ScanStatus()
