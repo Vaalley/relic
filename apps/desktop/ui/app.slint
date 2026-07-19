@@ -22,12 +22,18 @@ export component MainWindow inherits Window {
     in property <[GameItem]> games-model;
     in property <string> games-heading;
     in-out property <string> search-text;
+    in property <string> emulator-status;
+    in-out property <string> emulator-name-input;
+    in-out property <string> emulator-exec-input;
+    in-out property <string> emulator-args-input: "{rom}";
 
     callback system-selected(int);
     callback search-edited(string);
     callback favorite-toggled(int);
     callback add-library-requested();
     callback game-launch-requested(int);
+    callback browse-emulator-exec();
+    callback save-launch-profile();
 
     VerticalLayout {
         padding: 12px;
@@ -87,6 +93,48 @@ export component MainWindow inherits Window {
                     text <=> search-text;
                     edited(text) => {
                         search-edited(text);
+                    }
+                }
+
+                Text {
+                    text: emulator-status;
+                    color: #e0c341;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+
+                HorizontalLayout {
+                    spacing: 4px;
+
+                    LineEdit {
+                        placeholder-text: "Emulator name";
+                        text <=> emulator-name-input;
+                        width: 110px;
+                    }
+
+                    LineEdit {
+                        placeholder-text: "Path to emulator executable";
+                        text <=> emulator-exec-input;
+                    }
+
+                    Button {
+                        text: "Browse…";
+                        clicked => {
+                            browse-emulator-exec();
+                        }
+                    }
+
+                    LineEdit {
+                        placeholder-text: "{rom}";
+                        text <=> emulator-args-input;
+                        width: 90px;
+                    }
+
+                    Button {
+                        text: "Save";
+                        clicked => {
+                            save-launch-profile();
+                        }
                     }
                 }
 

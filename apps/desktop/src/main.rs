@@ -92,6 +92,19 @@ fn main() -> Result<(), slint::PlatformError> {
                 .collect();
             window.set_games_model(ModelRc::new(VecModel::from(items)));
             *current_games.borrow_mut() = games;
+
+            let profile = engine
+                .borrow()
+                .list_launch_profiles()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| &p.system_slug == slug)
+                .max_by_key(|p| p.priority);
+            let status = match profile {
+                Some(p) => format!("Launch profile: {} \"{}\"", p.emulator_name, p.arg_template),
+                None => format!("No launch profile for {slug} yet — configure one below."),
+            };
+            window.set_emulator_status(status.into());
         }
     };
 
@@ -193,6 +206,58 @@ fn main() -> Result<(), slint::PlatformError> {
                 Err(e) => format!("Launch failed: {e}"),
             };
             window.set_status_line(message.into());
+        }
+    });
+
+    window.on_browse_emulator_exec({
+        let window_weak = window.as_weak();
+        move || {
+            let Some(path) = rfd::FileDialog::new().pick_file() else {
+                return;
+            };
+            if let Some(window) = window_weak.upgrade() {
+                window.set_emulator_exec_input(path.to_string_lossy().into_owned().into());
+            }
+        }
+    });
+
+    window.on_save_launch_profile({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let system_slugs = Rc::clone(&system_slugs);
+        let current_system = Rc::clone(&current_system);
+        let refresh_games = refresh_games.clone();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let slugs = system_slugs.borrow();
+            let Some(slug) = slugs.get(current_system.get()).cloned() else {
+                return;
+            };
+            drop(slugs);
+            let name = window.get_emulator_name_input().to_string();
+            let exec = window.get_emulator_exec_input().to_string();
+            let args = window.get_emulator_args_input().to_string();
+            if name.trim().is_empty() || exec.trim().is_empty() {
+                window.set_status_line("Emulator name and executable path are required.".into());
+                return;
+            }
+            let mut eng = engine.borrow_mut();
+            let result = eng
+                .add_emulator(name.trim(), exec.trim())
+                .and_then(|_| eng.add_launch_profile(name.trim(), &slug, args.trim(), 0));
+            match result {
+                Ok(_) => {
+                    window.set_status_line(format!("Saved launch profile for {slug}.").into());
+                }
+                Err(e) => {
+                    window.set_status_line(format!("Failed to save profile: {e}").into());
+                }
+            }
+            drop(eng);
+            let search = window.get_search_text();
+            refresh_games(search.as_str());
         }
     });
 
