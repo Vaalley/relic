@@ -444,6 +444,106 @@ pub fn theme_colors(dark: bool) -> ThemeColors {
     }
 }
 
+/// One Android intent template that's a launch candidate for a system
+/// (docs/android-intents.md), enough for a shell to build a launch-profile
+/// picker without parsing TOML itself.
+#[derive(uniffi::Record)]
+pub struct IntentTemplateInfo {
+    pub id: String,
+    pub display_name: String,
+    pub package: String,
+}
+
+/// One resolved `[[extras]]` entry — ready for `Intent.putExtra` via the
+/// overload matching `extra_type` (`"string"`, `"bool"`, or `"int"`).
+#[derive(uniffi::Record)]
+pub struct ResolvedExtraInfo {
+    pub name: String,
+    pub extra_type: String,
+    pub value: String,
+}
+
+/// A template fully merged with its `per_system` override and with every
+/// placeholder substituted (docs/android-intents.md §5) — everything a shell
+/// needs to build and fire one explicit `Intent`. `data_mode` is `"data"`,
+/// `"extra"`, or `"none"`.
+#[derive(uniffi::Record)]
+pub struct ResolvedIntentInfo {
+    pub package: String,
+    pub activity: String,
+    pub action: String,
+    pub data_mode: String,
+    pub data_extra_name: Option<String>,
+    pub data_mime_type: Option<String>,
+    pub extras: Vec<ResolvedExtraInfo>,
+    pub flags: Vec<String>,
+}
+
+/// Built-in intent templates that are launch candidates for `system_slug`
+/// (`relic_core::intents::applies_to`), in the shipped `BUILTIN` order —
+/// RetroArch first, then standalones. A shell tries each in order, picking
+/// the first whose `package` is installed.
+#[uniffi::export]
+pub fn intent_templates_for_system(system_slug: String) -> Vec<IntentTemplateInfo> {
+    relic_core::intents::builtin_intents()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(_, t)| relic_core::intents::applies_to(t, &system_slug))
+        .map(|(stem, t)| IntentTemplateInfo {
+            id: stem,
+            display_name: t.display_name,
+            package: t.package,
+        })
+        .collect()
+}
+
+/// Resolve `template_id` against `system_slug`, substituting `rom_uri`,
+/// `rom_path`, and `core` (docs/android-intents.md §4.3). `core` must already
+/// be the full path a RetroArch-family template expects (e.g.
+/// `/data/data/<pkg>/cores/<stem>_libretro_android.so>`, built by the caller
+/// from [`RelicEngine::system_default_core`] — this module has no notion of
+/// Android package layout). Returns `None` if `template_id` doesn't match a
+/// built-in template.
+#[uniffi::export]
+pub fn resolve_intent(
+    template_id: String,
+    system_slug: String,
+    rom_uri: String,
+    rom_path: String,
+    core: Option<String>,
+) -> Option<ResolvedIntentInfo> {
+    let (_, template) = relic_core::intents::builtin_intents()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(stem, _)| *stem == template_id)?;
+
+    let ctx = relic_core::intents::LaunchContext {
+        rom_uri: &rom_uri,
+        rom_path: &rom_path,
+        core: core.as_deref(),
+    };
+    let resolved = relic_core::intents::resolve(&template, &system_slug, &ctx);
+
+    Some(ResolvedIntentInfo {
+        package: resolved.package,
+        activity: resolved.activity,
+        action: resolved.action,
+        data_mode: format!("{:?}", resolved.data_mode).to_lowercase(),
+        data_extra_name: resolved.data_extra_name,
+        data_mime_type: resolved.data_mime_type,
+        extras: resolved
+            .extras
+            .into_iter()
+            .map(|e| ResolvedExtraInfo {
+                name: e.name,
+                extra_type: format!("{:?}", e.extra_type).to_lowercase(),
+                value: e.value,
+            })
+            .collect(),
+        flags: resolved.flags,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,5 +645,57 @@ mod tests {
             .scraper_confirm_match(games[0].id, "screenscraper".into())
             .unwrap();
         assert!(engine.scraper_pending_matches().unwrap().is_empty());
+    }
+
+    #[test]
+    fn intent_templates_for_system_filters_and_orders_by_builtin() {
+        let snes = intent_templates_for_system("snes".to_string());
+        assert!(snes.iter().any(|t| t.id == "retroarch"));
+        assert!(!snes.iter().any(|t| t.id == "duckstation"));
+
+        let psx = intent_templates_for_system("psx".to_string());
+        assert!(psx.iter().any(|t| t.id == "retroarch"));
+        assert!(psx.iter().any(|t| t.id == "duckstation"));
+        // RetroArch (first in BUILTIN) should come before standalones.
+        assert_eq!(psx[0].id, "retroarch");
+    }
+
+    #[test]
+    fn resolve_intent_substitutes_and_reports_unknown_template() {
+        assert!(resolve_intent(
+            "not-a-real-template".to_string(),
+            "snes".to_string(),
+            "content://x".to_string(),
+            "snes/game.zip".to_string(),
+            None,
+        )
+        .is_none());
+
+        let resolved = resolve_intent(
+            "retroarch".to_string(),
+            "snes".to_string(),
+            "content://relic/rom".to_string(),
+            "snes/game.zip".to_string(),
+            Some("/data/data/com.retroarch/cores/snes9x_libretro_android.so".to_string()),
+        )
+        .expect("retroarch is a built-in template");
+
+        assert_eq!(resolved.package, "com.retroarch");
+        assert_eq!(resolved.data_mode, "extra");
+        let rom_extra = resolved.extras.iter().find(|e| e.name == "ROM").unwrap();
+        assert_eq!(rom_extra.value, "content://relic/rom");
+        let core_extra = resolved
+            .extras
+            .iter()
+            .find(|e| e.name == "LIBRETRO")
+            .unwrap();
+        assert_eq!(
+            core_extra.value,
+            "/data/data/com.retroarch/cores/snes9x_libretro_android.so"
+        );
+        assert!(resolved
+            .flags
+            .iter()
+            .any(|f| f == "FLAG_GRANT_READ_URI_PERMISSION"));
     }
 }
