@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -134,6 +135,7 @@ class MainActivity : ComponentActivity() {
                         when {
                             !vm.hasLibrary -> SetupScreen()
                             detail != null -> DetailScreen(detail)
+                            vm.viewingCollections -> CollectionsScreen()
                             else -> LibraryScreen()
                         }
                     }
@@ -248,6 +250,9 @@ class MainActivity : ComponentActivity() {
                 OutlinedButton(onClick = { vm.editLibrary() }, enabled = !vm.scanning) {
                     Text("Folder")
                 }
+                OutlinedButton(onClick = { vm.openCollections() }) {
+                    Text("Collections")
+                }
             }
             ScanStatus()
             LazyVerticalGrid(
@@ -257,6 +262,76 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxSize(),
             ) {
                 items(vm.visibleGames, key = { it.id }) { game -> GameTile(game) }
+            }
+        }
+    }
+
+    @Composable
+    private fun CollectionsScreen() {
+        BackHandler {
+            if (vm.selectedCollection != null) vm.closeCollectionDetail() else vm.closeCollections()
+        }
+        val collection = vm.selectedCollection
+        if (collection == null) {
+            var newName by remember { mutableStateOf("") }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Collections", style = MaterialTheme.typography.headlineMedium)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        label = { Text("New collection") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Button(onClick = {
+                        vm.createManualCollection(newName)
+                        newName = ""
+                    }) {
+                        Text("Create")
+                    }
+                }
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                ) {
+                    vm.collections.forEach { c ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().clickable { vm.openCollection(c) }.padding(8.dp),
+                        ) {
+                            Text(
+                                "${c.name} (${c.kind})",
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(onClick = { vm.deleteCollection(c) }) {
+                                Text("Delete")
+                            }
+                        }
+                    }
+                }
+                OutlinedButton(onClick = { vm.closeCollections() }) {
+                    Text("Back")
+                }
+                vm.status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(collection.name, style = MaterialTheme.typography.headlineMedium)
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(120.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                ) {
+                    items(vm.collectionGames, key = { it.id }) { game -> GameTile(game) }
+                }
+                OutlinedButton(onClick = { vm.closeCollectionDetail() }) {
+                    Text("Back")
+                }
             }
         }
     }
@@ -297,6 +372,7 @@ class MainActivity : ComponentActivity() {
         BackHandler { vm.closeGame() }
         val playFocus = remember { FocusRequester() }
         LaunchedEffect(game.id) { playFocus.requestFocus() }
+        LaunchedEffect(Unit) { vm.refreshCollectionsQuietly() }
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -332,6 +408,17 @@ class MainActivity : ComponentActivity() {
                         }
                         OutlinedButton(onClick = { vm.closeGame() }) {
                             Text("Back")
+                        }
+                    }
+                    val manualCollections = vm.collections.filter { it.kind == "manual" }
+                    if (manualCollections.isNotEmpty()) {
+                        Text("Add to collection", style = MaterialTheme.typography.labelSmall)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(manualCollections) { c ->
+                                OutlinedButton(onClick = { vm.addGameToCollection(c.id, game) }) {
+                                    Text(c.name)
+                                }
+                            }
                         }
                     }
                 }

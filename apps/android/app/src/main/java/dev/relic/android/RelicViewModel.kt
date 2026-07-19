@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import uniffi.relic_ffi.CollectionInfo
 import uniffi.relic_ffi.EventListener
 import uniffi.relic_ffi.GameInfo
 import uniffi.relic_ffi.RelicEngine
@@ -45,6 +46,14 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     var favoritesOnly by mutableStateOf(false)
         private set
     var selectedGame by mutableStateOf<GameInfo?>(null)
+        private set
+    var collections by mutableStateOf<List<CollectionInfo>>(emptyList())
+        private set
+    var viewingCollections by mutableStateOf(false)
+        private set
+    var selectedCollection by mutableStateOf<CollectionInfo?>(null)
+        private set
+    var collectionGames by mutableStateOf<List<GameInfo>>(emptyList())
         private set
 
     /** Games as the grid should show them (favorites filter is client-side). */
@@ -105,6 +114,104 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             val g = engine.queryGames(selectedSystem, search.ifBlank { null })
             withContext(Dispatchers.Main) { games = g }
+        }
+    }
+
+    fun openCollections() {
+        viewingCollections = true
+        refreshCollections()
+    }
+
+    /** Populates [collections] without navigating — used by DetailScreen's quick-add row. */
+    fun refreshCollectionsQuietly() {
+        refreshCollections()
+    }
+
+    fun closeCollections() {
+        viewingCollections = false
+        selectedCollection = null
+    }
+
+    fun openCollection(c: CollectionInfo) {
+        selectedCollection = c
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val g = engine.collectionGames(c.id)
+                withContext(Dispatchers.Main) { collectionGames = g }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
+        }
+    }
+
+    fun closeCollectionDetail() {
+        selectedCollection = null
+    }
+
+    private fun refreshCollections() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val c = engine.listCollections()
+                withContext(Dispatchers.Main) { collections = c }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
+        }
+    }
+
+    fun createManualCollection(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.createManualCollection(name.trim())
+                val c = engine.listCollections()
+                withContext(Dispatchers.Main) { collections = c }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
+        }
+    }
+
+    fun deleteCollection(c: CollectionInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.deleteCollection(c.id)
+                val remaining = engine.listCollections()
+                withContext(Dispatchers.Main) {
+                    collections = remaining
+                    if (selectedCollection?.id == c.id) selectedCollection = null
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
+        }
+    }
+
+    fun addGameToCollection(collectionId: Long, game: GameInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.addToCollection(collectionId, game.id)
+                if (selectedCollection?.id == collectionId) {
+                    val g = engine.collectionGames(collectionId)
+                    withContext(Dispatchers.Main) { collectionGames = g }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
+        }
+    }
+
+    fun removeGameFromCollection(collectionId: Long, game: GameInfo) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.removeFromCollection(collectionId, game.id)
+                if (selectedCollection?.id == collectionId) {
+                    val g = engine.collectionGames(collectionId)
+                    withContext(Dispatchers.Main) { collectionGames = g }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
+            }
         }
     }
 
