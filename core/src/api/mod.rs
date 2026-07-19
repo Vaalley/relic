@@ -236,6 +236,52 @@ impl Engine {
         Ok(total)
     }
 
+    /// Export every system's games in a library back to
+    /// `<root>/<slug>/gamelist.xml` (the inverse of `import_gamelists`,
+    /// for interop with other frontends). Systems with no games in this
+    /// library are skipped. Returns the number of files written.
+    pub fn export_gamelists(&self, library_id: i64) -> Result<u64> {
+        let root: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT root_uri FROM libraries WHERE id=?1",
+                [library_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| crate::Error::LibraryNotFound(library_id))?;
+
+        let mut written = 0u64;
+        for def in &self.systems {
+            let slug = &def.slug;
+            let has_games: i64 = self
+                .db
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM games g
+                     JOIN files f ON f.game_id = g.id
+                     JOIN systems s ON s.id = g.system_id
+                     WHERE f.library_id = ?1 AND s.slug = ?2",
+                    rusqlite::params![library_id, slug],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if has_games == 0 {
+                continue;
+            }
+            let xml = gamelist::export_gamelist(&self.db, library_id, slug, slug)?;
+            let dir = PathBuf::from(&root).join(slug);
+            std::fs::create_dir_all(&dir).map_err(|e| crate::Error::Io {
+                path: dir.clone(),
+                source: e,
+            })?;
+            let path = dir.join("gamelist.xml");
+            std::fs::write(&path, xml).map_err(|e| crate::Error::Io { path, source: e })?;
+            written += 1;
+        }
+        Ok(written)
+    }
+
     /// Discover local artwork for a library (docs/media-conventions.md) and
     /// refresh the thumbnail cache. Scan first; discovery is per indexed ROM.
     pub fn refresh_media(

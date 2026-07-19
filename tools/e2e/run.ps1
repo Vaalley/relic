@@ -197,6 +197,24 @@ try {
 
     # (12) 'relic intent-validate' validates every shipped template clean
     Run-Step -Name "(12) Validate intent templates" -ArgsList @("intent-validate") -Contains @("OK    retroarch") -NotContains @("FAIL")
+
+    # (13) 'relic export-gamelists' writes gamelist.xml back out. Runs against
+    # a scratch copy of fixtures/mini, never the checked-in fixture itself —
+    # export overwrites <root>/<system>/gamelist.xml in place.
+    $ExportLib = Join-Path $ScratchDir "export-lib"
+    Copy-Item -Recurse $FixturesMini $ExportLib
+    $ExportDb = Join-Path $ScratchDir "export.db"
+    & $RelicBin scan --db $ExportDb $ExportLib | Out-Null
+    & $RelicBin import-gamelists --db $ExportDb $ExportLib | Out-Null
+    Run-Step -Name "(13) Export gamelists" -ArgsList @("export-gamelists", "--db", $ExportDb, $ExportLib) -Contains @("wrote 3 gamelist.xml")
+    $ExportedXml = Get-Content (Join-Path $ExportLib "snes" "gamelist.xml") -Raw
+    if ($ExportedXml -notmatch "Super Mario World" -or $ExportedXml -notmatch "<genre>Platform</genre>") {
+        $script:FailureCount++
+        Write-Host "FAIL: (13b) Exported snes/gamelist.xml content" -ForegroundColor Red
+    } else {
+        $script:PassedCount++
+        Write-Host "PASS: (13b) Exported snes/gamelist.xml content" -ForegroundColor Green
+    }
 }
 finally {
     if (Test-Path $ScratchDir) {

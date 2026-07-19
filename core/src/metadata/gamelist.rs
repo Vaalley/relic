@@ -13,8 +13,8 @@
 //! path and writes a `metadata` row per game (source = "gamelist"); it never
 //! creates `games`/`files` rows itself — that's the scanner's job.
 
-use quick_xml::events::Event as XmlEvent;
-use quick_xml::Reader;
+use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event as XmlEvent};
+use quick_xml::{Reader, Writer};
 
 /// One `<game>` entry from a gamelist.xml, tolerant of missing fields.
 ///
@@ -278,6 +278,166 @@ pub fn import_gamelist(
     Ok(stats)
 }
 
+/// Render every game of one system back to `gamelist.xml` (interop out —
+/// the inverse of [`import_gamelist`]). Prefers `metadata` rows with
+/// `source = 'gamelist'` for text fields (title/desc/genre/…), falling back
+/// to the scanned `canonical_name` when no such row exists; favorite/hidden
+/// come from `user_data`, the precious per-user table.
+///
+/// Media paths (image/marquee/video) are deliberately not written yet: this
+/// crate's media cache is content-addressed, not the relative-path-next-to-
+/// gamelist.xml convention ES/ES-DE expect, and that mapping isn't wired up.
+pub fn export_gamelist(
+    db: &crate::db::Db,
+    library_id: i64,
+    system_slug: &str,
+    gamelist_rel_dir: &str,
+) -> crate::Result<String> {
+    let conn = db.conn();
+    let system_id: i64 = conn
+        .query_row("SELECT id FROM systems WHERE slug=?1", [system_slug], |r| {
+            r.get(0)
+        })
+        .map_err(|_| crate::Error::UnknownSystem(system_slug.to_string()))?;
+
+    let mut stmt = conn.prepare(
+        "SELECT f.rel_path, g.canonical_name,
+                m.title, m.description, m.genre, m.developer, m.publisher,
+                m.release_date, m.players, m.rating,
+                COALESCE(u.favorite, 0), COALESCE(u.hidden, 0)
+         FROM games g
+         JOIN files f ON f.game_id = g.id AND f.library_id = ?1
+         LEFT JOIN metadata m ON m.game_id = g.id AND m.source = 'gamelist'
+         LEFT JOIN user_data u ON u.game_id = g.id
+         WHERE g.system_id = ?2
+         ORDER BY g.sort_name",
+    )?;
+
+    let rows: Vec<ExportRow> = stmt
+        .query_map(rusqlite::params![library_id, system_id], |r| {
+            Ok(ExportRow {
+                rel_path: r.get(0)?,
+                canonical_name: r.get(1)?,
+                title: r.get(2)?,
+                desc: r.get(3)?,
+                genre: r.get(4)?,
+                developer: r.get(5)?,
+                publisher: r.get(6)?,
+                release_date: r.get(7)?,
+                players: r.get(8)?,
+                rating: r.get(9)?,
+                favorite: r.get::<_, i64>(10)? != 0,
+                hidden: r.get::<_, i64>(11)? != 0,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    let mut writer = Writer::new_with_indent(std::io::Cursor::new(Vec::new()), b' ', 4);
+    // Writing to an in-memory Vec<u8> cannot fail, so these are unwrapped
+    // rather than threaded through crate::Error.
+    writer
+        .write_event(XmlEvent::Decl(BytesDecl::new("1.0", None, None)))
+        .unwrap();
+    writer
+        .write_event(XmlEvent::Start(BytesStart::new("gameList")))
+        .unwrap();
+
+    for row in &rows {
+        writer
+            .write_event(XmlEvent::Start(BytesStart::new("game")))
+            .unwrap();
+        write_field(
+            &mut writer,
+            "path",
+            &export_path(gamelist_rel_dir, &row.rel_path),
+        );
+        write_field(
+            &mut writer,
+            "name",
+            row.title.as_deref().unwrap_or(&row.canonical_name),
+        );
+        if let Some(v) = &row.desc {
+            write_field(&mut writer, "desc", v);
+        }
+        if let Some(v) = &row.genre {
+            write_field(&mut writer, "genre", v);
+        }
+        if let Some(v) = &row.developer {
+            write_field(&mut writer, "developer", v);
+        }
+        if let Some(v) = &row.publisher {
+            write_field(&mut writer, "publisher", v);
+        }
+        if let Some(v) = &row.release_date {
+            write_field(&mut writer, "releasedate", v);
+        }
+        if let Some(v) = &row.players {
+            write_field(&mut writer, "players", v);
+        }
+        if let Some(v) = row.rating {
+            write_field(&mut writer, "rating", &v.to_string());
+        }
+        if row.favorite {
+            write_field(&mut writer, "favorite", "true");
+        }
+        if row.hidden {
+            write_field(&mut writer, "hidden", "true");
+        }
+        writer
+            .write_event(XmlEvent::End(BytesEnd::new("game")))
+            .unwrap();
+    }
+
+    writer
+        .write_event(XmlEvent::End(BytesEnd::new("gameList")))
+        .unwrap();
+    let bytes = writer.into_inner().into_inner();
+    Ok(String::from_utf8(bytes).expect("quick_xml writer always produces valid utf8"))
+}
+
+struct ExportRow {
+    rel_path: String,
+    canonical_name: String,
+    title: Option<String>,
+    desc: Option<String>,
+    genre: Option<String>,
+    developer: Option<String>,
+    publisher: Option<String>,
+    release_date: Option<String>,
+    players: Option<String>,
+    rating: Option<f64>,
+    favorite: bool,
+    hidden: bool,
+}
+
+fn write_field(writer: &mut Writer<std::io::Cursor<Vec<u8>>>, tag: &str, value: &str) {
+    writer
+        .write_event(XmlEvent::Start(BytesStart::new(tag)))
+        .unwrap();
+    writer
+        .write_event(XmlEvent::Text(BytesText::new(value)))
+        .unwrap();
+    writer
+        .write_event(XmlEvent::End(BytesEnd::new(tag)))
+        .unwrap();
+}
+
+/// Inverse of `normalize_rel_path`: strip the gamelist's own directory
+/// prefix off a stored `files.rel_path` and restore the `./`-relative form
+/// ES/ES-DE gamelist.xml entries use.
+fn export_path(gamelist_rel_dir: &str, rel_path: &str) -> String {
+    let dir = gamelist_rel_dir.trim_matches('/');
+    let stripped = if dir.is_empty() {
+        rel_path
+    } else {
+        rel_path
+            .strip_prefix(dir)
+            .and_then(|s| s.strip_prefix('/'))
+            .unwrap_or(rel_path)
+    };
+    format!("./{stripped}")
+}
+
 fn normalize_rel_path(gamelist_rel_dir: &str, raw_path: &str) -> String {
     let raw = raw_path.trim().replace('\\', "/");
     let stripped = raw.strip_prefix("./").unwrap_or(&raw);
@@ -477,6 +637,66 @@ mod tests {
     fn import_unknown_system_slug_errors() {
         let (mut db, library_id, _game_id) = setup_db_with_one_file();
         let err = import_gamelist(&mut db, library_id, "nope", "snes", &[]).unwrap_err();
+        assert!(matches!(err, crate::Error::UnknownSystem(_)));
+    }
+
+    #[test]
+    fn export_round_trips_an_imported_entry() {
+        let (mut db, library_id, _game_id) = setup_db_with_one_file();
+        let entries = vec![GamelistEntry {
+            path: "./Super Mario World (USA).sfc".to_string(),
+            name: Some("Super Mario World".to_string()),
+            desc: Some("A classic platformer.".to_string()),
+            genre: Some("Platform".to_string()),
+            releasedate: Some("19910821T000000".to_string()),
+            players: Some("1-2".to_string()),
+            rating: Some(0.9),
+            ..Default::default()
+        }];
+        import_gamelist(&mut db, library_id, "snes", "snes", &entries).unwrap();
+
+        let xml = export_gamelist(&db, library_id, "snes", "snes").unwrap();
+        let reparsed = parse_gamelist(&xml).unwrap();
+        assert_eq!(reparsed.len(), 1);
+        let e = &reparsed[0];
+        assert_eq!(e.path, "./Super Mario World (USA).sfc");
+        assert_eq!(e.name.as_deref(), Some("Super Mario World"));
+        assert_eq!(e.desc.as_deref(), Some("A classic platformer."));
+        assert_eq!(e.genre.as_deref(), Some("Platform"));
+        assert_eq!(e.releasedate.as_deref(), Some("19910821T000000"));
+        assert_eq!(e.players.as_deref(), Some("1-2"));
+        assert_eq!(e.rating, Some(0.9));
+    }
+
+    #[test]
+    fn export_falls_back_to_canonical_name_without_metadata() {
+        let (db, library_id, _game_id) = setup_db_with_one_file();
+        let xml = export_gamelist(&db, library_id, "snes", "snes").unwrap();
+        let reparsed = parse_gamelist(&xml).unwrap();
+        assert_eq!(reparsed.len(), 1);
+        assert_eq!(reparsed[0].name.as_deref(), Some("Super Mario World (USA)"));
+        assert_eq!(reparsed[0].desc, None);
+    }
+
+    #[test]
+    fn export_includes_favorite_flag_from_user_data() {
+        let (mut db, library_id, game_id) = setup_db_with_one_file();
+        db.conn_mut()
+            .execute(
+                "INSERT INTO user_data (game_id, favorite) VALUES (?1, 1)",
+                [game_id],
+            )
+            .unwrap();
+
+        let xml = export_gamelist(&db, library_id, "snes", "snes").unwrap();
+        let reparsed = parse_gamelist(&xml).unwrap();
+        assert!(reparsed[0].favorite);
+    }
+
+    #[test]
+    fn export_unknown_system_slug_errors() {
+        let (db, library_id, _game_id) = setup_db_with_one_file();
+        let err = export_gamelist(&db, library_id, "nope", "snes").unwrap_err();
         assert!(matches!(err, crate::Error::UnknownSystem(_)));
     }
 }

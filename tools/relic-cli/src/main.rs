@@ -54,6 +54,13 @@ enum Command {
         db: PathBuf,
         root: PathBuf,
     },
+    /// Export <root>/<system>/gamelist.xml for every system with games in
+    /// this library (interop back out to other frontends).
+    ExportGamelists {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        root: PathBuf,
+    },
     /// Discover local artwork and refresh the thumbnail cache.
     RefreshMedia {
         #[arg(long, default_value = "relic.db")]
@@ -160,6 +167,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         Command::Doctor { db } => cmd_doctor(&db),
         Command::ImportGamelists { db, root } => cmd_import_gamelists(&db, &root),
+        Command::ExportGamelists { db, root } => cmd_export_gamelists(&db, &root),
         Command::RefreshMedia { db, root } => cmd_refresh_media(&db, &root),
         Command::Media { db, game_id } => cmd_media(&db, game_id),
         Command::Hash { db, limit } => cmd_hash(&db, limit),
@@ -241,6 +249,19 @@ fn cmd_import_gamelists(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
         }
     })?;
     println!("matched={} unmatched={}", stats.matched, stats.unmatched);
+    Ok(())
+}
+
+fn cmd_export_gamelists(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
+    let name = root
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("library")
+        .to_string();
+    let mut engine = Engine::open(db)?;
+    let library_id = engine.add_library(root, &name)?;
+    let written = engine.export_gamelists(library_id)?;
+    println!("wrote {written} gamelist.xml file(s)");
     Ok(())
 }
 
