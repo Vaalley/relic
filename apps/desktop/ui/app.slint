@@ -3,7 +3,7 @@
 // from PLAN.md Phase 2 scope: detail page, search, favorites toggle, launch,
 // first-run wizard, gamepad input, design-token theming.
 
-import { StandardListView, ListView } from "std-widgets.slint";
+import { LineEdit, ListView, StandardListView } from "std-widgets.slint";
 
 export struct GameItem {
     name: string,
@@ -20,8 +20,10 @@ export component MainWindow inherits Window {
     in property <[StandardListViewItem]> systems-model;
     in property <[GameItem]> games-model;
     in property <string> games-heading;
+    in-out property <string> search-text;
 
     callback system-selected(int);
+    callback search-edited(string);
 
     VerticalLayout {
         padding: 12px;
@@ -62,6 +64,14 @@ export component MainWindow inherits Window {
                     text: games-heading;
                     font-size: 16px;
                     color: #cccccc;
+                }
+
+                LineEdit {
+                    placeholder-text: "Search games…";
+                    text <=> search-text;
+                    edited(text) => {
+                        search-edited(text);
+                    }
                 }
 
                 ListView {

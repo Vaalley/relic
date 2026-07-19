@@ -11,6 +11,7 @@
 
 slint::include_modules!();
 
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -57,17 +58,26 @@ fn main() -> Result<(), slint::PlatformError> {
     );
     window.set_systems_model(systems_model);
 
-    let load_games = {
+    let engine = Rc::new(RefCell::new(engine));
+    let current_system: Rc<Cell<usize>> = Rc::new(Cell::new(0));
+
+    let refresh = {
         let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
         let system_slugs = Rc::clone(&system_slugs);
-        move |index: usize| {
+        let current_system = Rc::clone(&current_system);
+        move |search: &str| {
             let Some(window) = window_weak.upgrade() else {
                 return;
             };
-            let Some(slug) = system_slugs.get(index) else {
+            let Some(slug) = system_slugs.get(current_system.get()) else {
                 return;
             };
-            let games = engine.query_games(Some(slug), None).unwrap_or_default();
+            let search = (!search.trim().is_empty()).then_some(search.trim());
+            let games = engine
+                .borrow()
+                .query_games(Some(slug), search)
+                .unwrap_or_default();
             window.set_games_heading(format!("Games — {} ({})", slug, games.len()).into());
             let items: Vec<GameItem> = games
                 .iter()
@@ -81,15 +91,27 @@ fn main() -> Result<(), slint::PlatformError> {
     };
 
     if !system_slugs.is_empty() {
-        load_games(0);
+        refresh("");
     } else {
         window.set_games_heading("Games".into());
     }
 
-    window.on_system_selected(move |index| {
-        if index >= 0 {
-            load_games(index as usize);
+    window.on_system_selected({
+        let current_system = Rc::clone(&current_system);
+        let refresh = refresh.clone();
+        let window_weak = window.as_weak();
+        move |index| {
+            if index < 0 {
+                return;
+            }
+            current_system.set(index as usize);
+            let search = window_weak.upgrade().map(|w| w.get_search_text());
+            refresh(search.as_deref().unwrap_or(""));
         }
+    });
+
+    window.on_search_edited(move |text| {
+        refresh(text.as_str());
     });
 
     window.run()
