@@ -434,17 +434,15 @@ pub struct ThemeColors {
     pub radius: i64,
 }
 
-/// Resolve the bundled default theme's tokens for `dark`/light variant.
-/// Only the default theme is exposed for now — custom theme loading over
-/// FFI is deferred until a shell needs to let users pick one.
-#[uniffi::export]
-pub fn theme_colors(dark: bool) -> ThemeColors {
-    let variant = if dark {
+fn variant_of(dark: bool) -> relic_themes::Variant {
+    if dark {
         relic_themes::Variant::Dark
     } else {
         relic_themes::Variant::Light
-    };
-    let tokens = relic_themes::resolve(Some(relic_themes::default_theme()), variant);
+    }
+}
+
+fn tokens_to_theme_colors(tokens: relic_themes::ResolvedTokens) -> ThemeColors {
     ThemeColors {
         bg: tokens.colors.bg,
         surface: tokens.colors.surface,
@@ -454,6 +452,48 @@ pub fn theme_colors(dark: bool) -> ThemeColors {
         favorite: tokens.colors.favorite,
         font_family: tokens.font_family,
         radius: tokens.radius,
+    }
+}
+
+/// Resolve the bundled default theme's tokens for `dark`/light variant.
+#[uniffi::export]
+pub fn theme_colors(dark: bool) -> ThemeColors {
+    let tokens = relic_themes::resolve(Some(relic_themes::default_theme()), variant_of(dark));
+    tokens_to_theme_colors(tokens)
+}
+
+/// `colors` from a user-selected theme directory, or the default theme's if
+/// `theme_dir` fails to load — `error` is set in that case so the shell can
+/// show a warning (spec section 6: "a broken theme degrades to the default
+/// theme with a visible warning, never a crash"; `colors` is never absent).
+#[derive(uniffi::Record)]
+pub struct ThemeLoadResult {
+    pub colors: ThemeColors,
+    pub error: Option<String>,
+}
+
+/// Load `theme_dir`'s tokens for `dark`/light variant, falling back to the
+/// bundled default on any validation error.
+#[uniffi::export]
+pub fn theme_colors_for_dir(theme_dir: String, dark: bool) -> ThemeLoadResult {
+    let variant = variant_of(dark);
+    match relic_themes::load_theme_dir(std::path::Path::new(&theme_dir)) {
+        Ok(theme) => ThemeLoadResult {
+            colors: tokens_to_theme_colors(relic_themes::resolve(Some(&theme), variant)),
+            error: None,
+        },
+        Err(issues) => ThemeLoadResult {
+            colors: tokens_to_theme_colors(relic_themes::resolve(
+                Some(relic_themes::default_theme()),
+                variant,
+            )),
+            error: Some(
+                issues
+                    .first()
+                    .map(|i| i.message.clone())
+                    .unwrap_or_else(|| "unknown error".to_string()),
+            ),
+        },
     }
 }
 
@@ -574,6 +614,36 @@ mod tests {
         assert!(dark.bg.starts_with('#'));
         assert!(light.bg.starts_with('#'));
         assert_ne!(dark.bg, light.bg);
+    }
+
+    #[test]
+    fn theme_colors_for_dir_applies_a_valid_theme() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("theme.toml"),
+            r##"
+[theme]
+name = "Custom"
+format_version = 1
+
+[colors.dark]
+accent = "#00ff00"
+"##,
+        )
+        .unwrap();
+
+        let result = theme_colors_for_dir(dir.path().to_string_lossy().into_owned(), true);
+        assert!(result.error.is_none());
+        assert_eq!(result.colors.accent, "#00ff00");
+    }
+
+    #[test]
+    fn theme_colors_for_dir_falls_back_to_default_on_error() {
+        let dir = tempfile::tempdir().unwrap(); // no theme.toml at all
+        let result = theme_colors_for_dir(dir.path().to_string_lossy().into_owned(), true);
+        assert!(result.error.is_some());
+        assert_eq!(result.colors.bg, theme_colors(true).bg);
+        assert_eq!(result.colors.accent, theme_colors(true).accent);
     }
 
     #[test]
