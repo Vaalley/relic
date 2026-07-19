@@ -13,6 +13,8 @@ import java.io.File
 import uniffi.relic_ffi.CollectionInfo
 import uniffi.relic_ffi.EventListener
 import uniffi.relic_ffi.GameInfo
+import uniffi.relic_ffi.GameStatsInfo
+import uniffi.relic_ffi.PlayTotals
 import uniffi.relic_ffi.RelicEngine
 import uniffi.relic_ffi.SystemInfo
 
@@ -54,6 +56,14 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     var selectedCollection by mutableStateOf<CollectionInfo?>(null)
         private set
     var collectionGames by mutableStateOf<List<GameInfo>>(emptyList())
+        private set
+    var viewingStats by mutableStateOf(false)
+        private set
+    var recentlyPlayed by mutableStateOf<List<GameStatsInfo>>(emptyList())
+        private set
+    var mostPlayed by mutableStateOf<List<GameStatsInfo>>(emptyList())
+        private set
+    var playTotals by mutableStateOf<PlayTotals?>(null)
         private set
 
     /** Games as the grid should show them (favorites filter is client-side). */
@@ -213,6 +223,28 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.Main) { status = "collections: ${e.message}" }
             }
         }
+    }
+
+    fun openStats() {
+        viewingStats = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val recent = engine.recentlyPlayed(20uL)
+                val most = engine.mostPlayed(20uL)
+                val totals = engine.playTotals()
+                withContext(Dispatchers.Main) {
+                    recentlyPlayed = recent
+                    mostPlayed = most
+                    playTotals = totals
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "stats: ${e.message}" }
+            }
+        }
+    }
+
+    fun closeStats() {
+        viewingStats = false
     }
 
     /**

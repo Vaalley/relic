@@ -55,6 +55,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import uniffi.relic_ffi.GameInfo
+import uniffi.relic_ffi.GameStatsInfo
 import uniffi.relic_ffi.themeColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -136,6 +137,7 @@ class MainActivity : ComponentActivity() {
                             !vm.hasLibrary -> SetupScreen()
                             detail != null -> DetailScreen(detail)
                             vm.viewingCollections -> CollectionsScreen()
+                            vm.viewingStats -> StatsScreen()
                             else -> LibraryScreen()
                         }
                     }
@@ -253,6 +255,9 @@ class MainActivity : ComponentActivity() {
                 OutlinedButton(onClick = { vm.openCollections() }) {
                     Text("Collections")
                 }
+                OutlinedButton(onClick = { vm.openStats() }) {
+                    Text("Stats")
+                }
             }
             ScanStatus()
             LazyVerticalGrid(
@@ -333,6 +338,43 @@ class MainActivity : ComponentActivity() {
                     Text("Back")
                 }
             }
+        }
+    }
+
+    @Composable
+    private fun StatsScreen() {
+        BackHandler { vm.closeStats() }
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Text("Stats", style = MaterialTheme.typography.headlineMedium)
+            vm.playTotals?.let {
+                Text("${it.sessions} sessions, ${it.totalSeconds / 60}m total")
+            }
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+            ) {
+                Text("Recently Played", style = MaterialTheme.typography.titleMedium)
+                vm.recentlyPlayed.forEach { g -> StatsRow(g) }
+                Text("Most Played", style = MaterialTheme.typography.titleMedium)
+                vm.mostPlayed.forEach { g -> StatsRow(g) }
+            }
+            OutlinedButton(onClick = { vm.closeStats() }) {
+                Text("Back")
+            }
+        }
+    }
+
+    @Composable
+    private fun StatsRow(g: GameStatsInfo) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("${g.name} (${g.systemSlug})", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                "${g.playCount}x, ${g.totalSeconds / 60}m total, last ${g.lastPlayedAt ?: "-"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 
