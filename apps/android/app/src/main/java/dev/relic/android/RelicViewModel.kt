@@ -14,6 +14,7 @@ import uniffi.relic_ffi.CollectionInfo
 import uniffi.relic_ffi.EventListener
 import uniffi.relic_ffi.GameInfo
 import uniffi.relic_ffi.GameStatsInfo
+import uniffi.relic_ffi.PendingMatchInfo
 import uniffi.relic_ffi.PlayTotals
 import uniffi.relic_ffi.RelicEngine
 import uniffi.relic_ffi.SystemInfo
@@ -64,6 +65,12 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
     var mostPlayed by mutableStateOf<List<GameStatsInfo>>(emptyList())
         private set
     var playTotals by mutableStateOf<PlayTotals?>(null)
+        private set
+    var viewingScraperMatches by mutableStateOf(false)
+        private set
+    var pendingMatches by mutableStateOf<List<PendingMatchInfo>>(emptyList())
+        private set
+    var pendingMatchGameNames by mutableStateOf<Map<Long, String>>(emptyMap())
         private set
 
     /** Games as the grid should show them (favorites filter is client-side). */
@@ -245,6 +252,39 @@ class RelicViewModel(app: Application) : AndroidViewModel(app) {
 
     fun closeStats() {
         viewingStats = false
+    }
+
+    fun openScraperMatches() {
+        viewingScraperMatches = true
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val matches = engine.scraperPendingMatches()
+                val allGames = engine.queryGames(null, null)
+                val names = allGames.associate { it.id to it.name }
+                withContext(Dispatchers.Main) {
+                    pendingMatches = matches
+                    pendingMatchGameNames = names
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "scraper: ${e.message}" }
+            }
+        }
+    }
+
+    fun closeScraperMatches() {
+        viewingScraperMatches = false
+    }
+
+    fun confirmMatch(gameId: Long, providerId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                engine.scraperConfirmMatch(gameId, providerId)
+                val matches = engine.scraperPendingMatches()
+                withContext(Dispatchers.Main) { pendingMatches = matches }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { status = "scraper: ${e.message}" }
+            }
+        }
     }
 
     /**

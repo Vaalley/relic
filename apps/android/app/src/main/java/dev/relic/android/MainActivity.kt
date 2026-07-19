@@ -56,6 +56,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import uniffi.relic_ffi.GameInfo
 import uniffi.relic_ffi.GameStatsInfo
+import uniffi.relic_ffi.PendingMatchInfo
 import uniffi.relic_ffi.themeColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -138,6 +139,7 @@ class MainActivity : ComponentActivity() {
                             detail != null -> DetailScreen(detail)
                             vm.viewingCollections -> CollectionsScreen()
                             vm.viewingStats -> StatsScreen()
+                            vm.viewingScraperMatches -> ScraperMatchesScreen()
                             else -> LibraryScreen()
                         }
                     }
@@ -258,6 +260,9 @@ class MainActivity : ComponentActivity() {
                 OutlinedButton(onClick = { vm.openStats() }) {
                     Text("Stats")
                 }
+                OutlinedButton(onClick = { vm.openScraperMatches() }) {
+                    Text("Scraper")
+                }
             }
             ScanStatus()
             LazyVerticalGrid(
@@ -375,6 +380,52 @@ class MainActivity : ComponentActivity() {
                 "${g.playCount}x, ${g.totalSeconds / 60}m total, last ${g.lastPlayedAt ?: "-"}",
                 style = MaterialTheme.typography.bodySmall,
             )
+        }
+    }
+
+    @Composable
+    private fun ScraperMatchesScreen() {
+        BackHandler { vm.closeScraperMatches() }
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Text("Pending scraper matches", style = MaterialTheme.typography.headlineMedium)
+            if (vm.pendingMatches.isEmpty()) {
+                Text("No pending matches")
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()),
+                ) {
+                    vm.pendingMatches.forEach { match -> PendingMatchRow(match) }
+                }
+            }
+            OutlinedButton(onClick = { vm.closeScraperMatches() }) {
+                Text("Back")
+            }
+        }
+    }
+
+    @Composable
+    private fun PendingMatchRow(match: PendingMatchInfo) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    vm.pendingMatchGameNames[match.gameId] ?: "game #${match.gameId}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "${match.providerId} — ${match.confidence} confidence — #${match.externalId}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            OutlinedButton(onClick = { vm.confirmMatch(match.gameId, match.providerId) }) {
+                Text("Confirm")
+            }
         }
     }
 
