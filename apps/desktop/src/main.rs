@@ -17,6 +17,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use relic_core::api::{Engine, GameRow};
+use relic_core::events::Event;
 use slint::{ModelRc, StandardListViewItem, VecModel};
 
 fn fixtures_root() -> PathBuf {
@@ -164,6 +165,34 @@ fn main() -> Result<(), slint::PlatformError> {
                 let search = window_weak.upgrade().map(|w| w.get_search_text());
                 refresh_games(search.as_deref().unwrap_or(""));
             }
+        }
+    });
+
+    window.on_game_launch_requested({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        move |id| {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let mut events = Vec::new();
+            let result = engine
+                .borrow_mut()
+                .launch(id as i64, &mut |e| events.push(e));
+            let message = match result {
+                Ok(_) => {
+                    let duration = events.iter().find_map(|e| match e {
+                        Event::LaunchEnded { duration_s, .. } => Some(*duration_s),
+                        _ => None,
+                    });
+                    match duration {
+                        Some(d) => format!("Played for {d}s"),
+                        None => "Launched".to_string(),
+                    }
+                }
+                Err(e) => format!("Launch failed: {e}"),
+            };
+            window.set_status_line(message.into());
         }
     });
 

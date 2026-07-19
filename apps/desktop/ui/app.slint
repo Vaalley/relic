@@ -27,6 +27,7 @@ export component MainWindow inherits Window {
     callback search-edited(string);
     callback favorite-toggled(int);
     callback add-library-requested();
+    callback game-launch-requested(int);
 
     VerticalLayout {
         padding: 12px;
@@ -92,6 +93,12 @@ export component MainWindow inherits Window {
                 ListView {
                     for game in games-model: Rectangle {
                         height: 26px;
+
+                        row-area := TouchArea {
+                            double-clicked => {
+                                game-launch-requested(game.id);
+                            }
+                        }
 
                         HorizontalLayout {
                             padding-left: 4px;
