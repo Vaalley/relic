@@ -317,6 +317,32 @@ pub fn parse_theme(toml_src: &str) -> Result<Theme, Vec<Issue>> {
     })
 }
 
+/// Load a theme directory into a typed [`Theme`], for a shell that wants to
+/// actually apply a user-selected theme (not just validate it). Returns
+/// `Err(issues)` iff [`validate_dir`] finds any error-severity issue —
+/// warnings are dropped, same split as [`parse_theme`] vs
+/// `validate_manifest`. Re-reads `theme.toml` after validation rather than
+/// threading the source through, since themes are tiny and this isn't a hot
+/// path (loaded once at startup, or on a resume-triggered mtime check).
+pub fn load_theme_dir(theme_dir: &Path) -> Result<Theme, Vec<Issue>> {
+    let issues = validate_dir(theme_dir);
+    if issues.iter().any(|i| i.severity == Severity::Error) {
+        return Err(issues);
+    }
+    let src = std::fs::read_to_string(theme_dir.join("theme.toml")).map_err(|e| {
+        vec![Issue::error(
+            "missing-manifest",
+            format!("cannot read `theme.toml`: {e}"),
+        )]
+    })?;
+    toml::from_str::<Theme>(&src).map_err(|e| {
+        vec![Issue::error(
+            "unparseable-toml",
+            format!("failed to deserialize theme: {e}"),
+        )]
+    })
+}
+
 /// Validate a theme directory: reads `theme.toml`, runs `validate_manifest`,
 /// then checks every non-empty `[sounds]` path resolves inside the theme
 /// folder, exists, and is a permitted sound format (spec sections 2, 7).

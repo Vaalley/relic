@@ -62,6 +62,15 @@ pub fn validate_dir(theme_dir: &std::path::Path) -> Vec<Issue> {
     validate::validate_dir(theme_dir)
 }
 
+/// Load a theme directory into a typed [`Theme`] for a shell to apply
+/// (validation only, `theme validate`, uses [`validate_dir`] instead).
+/// `Err` iff any error-severity issue is found; a broken theme should fall
+/// back to [`default_theme`] with a visible warning, never crash (spec
+/// section 6 rule).
+pub fn load_theme_dir(theme_dir: &std::path::Path) -> Result<Theme, Vec<Issue>> {
+    validate::load_theme_dir(theme_dir)
+}
+
 /// Resolve concrete tokens for `variant`, falling back per-key to the
 /// default theme. `theme = None` resolves fully to defaults (spec 6.4).
 pub fn resolve(theme: Option<&Theme>, variant: Variant) -> ResolvedTokens {
@@ -444,5 +453,59 @@ move = "sounds/move.wav"
         let dir = tempfile::tempdir().expect("tempdir created");
         let issues = validate_dir(dir.path());
         assert_has_error(&issues, "missing-manifest");
+    }
+
+    #[test]
+    fn load_theme_dir_returns_theme_on_a_valid_directory() {
+        use std::fs;
+        let dir = tempfile::tempdir().expect("tempdir created");
+        let root = dir.path();
+        fs::write(
+            root.join("theme.toml"),
+            r##"
+[theme]
+name = "Loadable"
+format_version = 1
+
+[colors.dark]
+accent = "#ff0000"
+"##,
+        )
+        .expect("write manifest");
+
+        let theme = load_theme_dir(root).expect("valid theme dir loads");
+        assert_eq!(theme.theme.name.as_deref(), Some("Loadable"));
+        let tokens = resolve(Some(&theme), Variant::Dark);
+        assert_eq!(tokens.colors.accent, "#ff0000");
+    }
+
+    #[test]
+    fn load_theme_dir_rejects_a_directory_with_error_issues() {
+        let dir = tempfile::tempdir().expect("tempdir created");
+        let issues = load_theme_dir(dir.path()).expect_err("missing manifest is an error");
+        assert_has_error(&issues, "missing-manifest");
+    }
+
+    #[test]
+    fn load_theme_dir_rejects_bad_sound_assets_even_though_colors_parse() {
+        use std::fs;
+        let dir = tempfile::tempdir().expect("tempdir created");
+        let root = dir.path();
+        fs::write(
+            root.join("theme.toml"),
+            r##"
+[theme]
+name = "Dir"
+format_version = 1
+
+[sounds]
+move = "beep.txt"
+"##,
+        )
+        .expect("write manifest");
+        fs::write(root.join("beep.txt"), b"data").expect("write asset");
+
+        let issues = load_theme_dir(root).expect_err("bad sound extension is an error");
+        assert_has_error(&issues, "bad-asset-format");
     }
 }

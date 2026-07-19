@@ -425,6 +425,32 @@ impl Engine {
         self.db.integrity_check()
     }
 
+    /// Get an arbitrary shell-level setting from the `settings` table (e.g.
+    /// a chosen theme directory). Not to be confused with module-scoped
+    /// keys, which use a `module.<name>.` prefix
+    /// ([`crate::db::apply_module_migrations`]) — shell settings use a plain
+    /// key and the two namespaces must not collide. `None` if unset.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        use rusqlite::OptionalExtension;
+        Ok(self
+            .db
+            .conn()
+            .query_row("SELECT value FROM settings WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?)
+    }
+
+    /// Set (or overwrite) an arbitrary shell-level setting.
+    pub fn set_setting(&mut self, key: &str, value: &str) -> Result<()> {
+        self.db.conn().execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
     /// Games with at least one completed play session, most recently played
     /// first (PLAN.md §5 "Recently played / most played").
     pub fn recently_played(&self, limit: usize) -> Result<Vec<crate::stats::GameStats>> {
@@ -795,6 +821,28 @@ mod tests {
             engine.add_to_collection(collection_id, game_id),
             Err(crate::Error::NotManualCollection(_))
         ));
+    }
+
+    #[test]
+    fn get_and_set_setting_round_trips_and_overwrites() {
+        let mut engine = Engine::open_in_memory().unwrap();
+        assert_eq!(engine.get_setting("theme_dir").unwrap(), None);
+
+        engine
+            .set_setting("theme_dir", "/roms/themes/mine")
+            .unwrap();
+        assert_eq!(
+            engine.get_setting("theme_dir").unwrap(),
+            Some("/roms/themes/mine".to_string())
+        );
+
+        engine
+            .set_setting("theme_dir", "/roms/themes/other")
+            .unwrap();
+        assert_eq!(
+            engine.get_setting("theme_dir").unwrap(),
+            Some("/roms/themes/other".to_string())
+        );
     }
 
     #[test]
