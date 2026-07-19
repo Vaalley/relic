@@ -12,4 +12,5 @@ path = "src/main.rs"
 
 [dependencies]
 relic-core.workspace = true
+relic-themes = { path = "../../modules/themes" }
 clap = { version = "4", features = ["derive"] }

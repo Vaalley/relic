@@ -206,6 +206,8 @@ enum Command {
         /// Validate this TOML file instead of the built-in set.
         path: Option<PathBuf>,
     },
+    /// Validate a theme directory against the layer-1 token spec (PLAN.md section 6).
+    ThemeValidate { path: PathBuf },
 }
 
 fn main() {
@@ -277,6 +279,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         } => cmd_dat_import(&db, &system, &dat_path),
         Command::Intents => cmd_intents(),
         Command::IntentValidate { path } => cmd_intent_validate(path.as_deref()),
+        Command::ThemeValidate { path } => cmd_theme_validate(&path),
     }
 }
 
@@ -656,4 +659,30 @@ fn cmd_doctor(db: &Path) -> Result<(), Box<dyn Error>> {
         println!("CORRUPT");
         std::process::exit(1);
     }
+}
+
+fn cmd_theme_validate(path: &Path) -> Result<(), Box<dyn Error>> {
+    let issues = relic_themes::validate_dir(path);
+    if issues.is_empty() {
+        println!("OK");
+        return Ok(());
+    }
+
+    let mut has_error = false;
+    for issue in &issues {
+        let sev_str = match issue.severity {
+            relic_themes::Severity::Error => {
+                has_error = true;
+                "ERROR"
+            }
+            relic_themes::Severity::Warning => "WARN ",
+        };
+        println!("{} {}: {}", sev_str, issue.code, issue.message);
+    }
+
+    if has_error {
+        std::process::exit(1);
+    }
+
+    Ok(())
 }
