@@ -8,3 +8,4 @@ repository.workspace = true
 
 [dependencies]
 relic-core.workspace = true
+rusqlite.workspace = true
