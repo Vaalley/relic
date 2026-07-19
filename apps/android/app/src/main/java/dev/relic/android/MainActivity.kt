@@ -76,6 +76,22 @@ private fun parseHexColor(hex: String): Color {
     }
 }
 
+/**
+ * FocusRequester.requestFocus() throws IllegalStateException if the target
+ * hasn't completed layout yet — reliably hit in practice when requesting
+ * initial focus from a LaunchedEffect right on screen entry, since the
+ * effect can resume before that frame's layout pass places the node
+ * (confirmed on-device, not just a theoretical race). Losing the initial
+ * D-pad anchor once isn't worth crashing the app over.
+ */
+private fun FocusRequester.requestFocusSafely() {
+    try {
+        requestFocus()
+    } catch (e: IllegalStateException) {
+        // Not yet laid out this frame; nothing to do.
+    }
+}
+
 class MainActivity : ComponentActivity() {
 
     private val vm: RelicViewModel by viewModels()
@@ -201,7 +217,7 @@ class MainActivity : ComponentActivity() {
         // root state) — back must not fall through to the default finish().
         BackHandler { }
         val browseFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { browseFocus.requestFocus() }
+        LaunchedEffect(Unit) { browseFocus.requestFocusSafely() }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Welcome to Relic", style = MaterialTheme.typography.headlineMedium)
             Text("Point Relic at your ROM folder (one subfolder per system, e.g. ROMs/snes).")
@@ -242,7 +258,11 @@ class MainActivity : ComponentActivity() {
         val firstTileFocus = remember { FocusRequester() }
         val searchFocus = remember { FocusRequester() }
         LaunchedEffect(vm.visibleGames.firstOrNull()?.id) {
-            if (vm.visibleGames.isNotEmpty()) firstTileFocus.requestFocus() else searchFocus.requestFocus()
+            if (vm.visibleGames.isNotEmpty()) {
+                firstTileFocus.requestFocusSafely()
+            } else {
+                searchFocus.requestFocusSafely()
+            }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -321,7 +341,7 @@ class MainActivity : ComponentActivity() {
         if (collection == null) {
             var newName by remember { mutableStateOf("") }
             val backFocus = remember { FocusRequester() }
-            LaunchedEffect(Unit) { backFocus.requestFocus() }
+            LaunchedEffect(Unit) { backFocus.requestFocusSafely() }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Collections", style = MaterialTheme.typography.headlineMedium)
                 Row(
@@ -370,7 +390,11 @@ class MainActivity : ComponentActivity() {
             val firstTileFocus = remember { FocusRequester() }
             val detailBackFocus = remember { FocusRequester() }
             LaunchedEffect(vm.collectionGames.firstOrNull()?.id) {
-                if (vm.collectionGames.isNotEmpty()) firstTileFocus.requestFocus() else detailBackFocus.requestFocus()
+                if (vm.collectionGames.isNotEmpty()) {
+                    firstTileFocus.requestFocusSafely()
+                } else {
+                    detailBackFocus.requestFocusSafely()
+                }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(collection.name, style = MaterialTheme.typography.headlineMedium)
@@ -398,7 +422,7 @@ class MainActivity : ComponentActivity() {
     private fun StatsScreen() {
         BackHandler { vm.closeStats() }
         val backFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { backFocus.requestFocus() }
+        LaunchedEffect(Unit) { backFocus.requestFocusSafely() }
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
@@ -437,7 +461,7 @@ class MainActivity : ComponentActivity() {
     private fun ScraperMatchesScreen() {
         BackHandler { vm.closeScraperMatches() }
         val backFocus = remember { FocusRequester() }
-        LaunchedEffect(Unit) { backFocus.requestFocus() }
+        LaunchedEffect(Unit) { backFocus.requestFocusSafely() }
         Column(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxSize(),
@@ -517,7 +541,7 @@ class MainActivity : ComponentActivity() {
     private fun DetailScreen(game: GameInfo) {
         BackHandler { vm.closeGame() }
         val playFocus = remember { FocusRequester() }
-        LaunchedEffect(game.id) { playFocus.requestFocus() }
+        LaunchedEffect(game.id) { playFocus.requestFocusSafely() }
         LaunchedEffect(Unit) { vm.refreshCollectionsQuietly() }
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp),

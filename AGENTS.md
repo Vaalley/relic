@@ -30,6 +30,13 @@ Decisions are recorded in `docs/adr/`; don't contradict an Accepted ADR silently
 - Offline-purity gate: `cargo build -p relic-core --no-default-features` must always pass.
 - Smoke test: `cargo run -p relic-cli -- scan --db test.db fixtures/mini` then
   `... games --db test.db` (delete `test.db*` afterwards; never commit it).
+- Android verification: `apps/android/app/src/main/jniLibs/*/librelic_ffi.so` is
+  gitignored and NOT rebuilt by `gradlew compileDebugKotlin`/`assembleDebug` — those
+  only repackage whatever `.so` is already sitting there. After any change under
+  `ffi/uniffi/`, you MUST run `pwsh -File tools/android/build-apk.ps1` (cargo-ndk
+  rebuild + binding regen + gradle) before trusting an Android build; a stale `.so`
+  compiles and installs fine but crashes instantly on-device with a UniFFI checksum
+  `UnsatisfiedLinkError`, which gradle alone will never catch.
 
 ## Hard rules
 
