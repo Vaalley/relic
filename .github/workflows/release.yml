@@ -1,0 +1,134 @@
+name: Release packaging
+
+# Manually triggered only. NEVER push/tag/create a GitHub Release from
+# this workflow — it produces workflow-run artifacts only, surfaced for
+# review/download from the Actions UI. PLAN.md §9 Phase 2 exit criteria:
+# packaging (MSI, dmg, flatpak, AppImage).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for artifact filenames (defaults to workspace.package.version = 0.1.0)'
+        required: false
+        default: '0.1.0'
+
+jobs:
+  windows-msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release -p relic-desktop
+
+      - name: Install WiX v4 CLI
+        run: dotnet tool install --global wix
+
+      - name: Build MSI
+        env:
+          CARGO_TARGET_DIR: target
+          RELIC_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path target/wix | Out-Null
+          wix build `
+            -o "target/wix/relic-desktop-${env:RELIC_VERSION}.msi" `
+            apps/desktop/packaging/windows/main.wxs
+        shell: pwsh
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relic-desktop-${{ github.event.inputs.version }}-windows-msi
+          path: target/wix/relic-desktop-${{ github.event.inputs.version }}.msi
+          if-no-files-found: error
+
+  macos-dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build dmg
+        env:
+          RELIC_VERSION: ${{ github.event.inputs.version }}
+        run: bash apps/desktop/packaging/macos/build-dmg.sh
+
+      - name: Upload dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relic-desktop-${{ github.event.inputs.version }}-macos-dmg
+          path: target/dmg/relic-desktop-${{ github.event.inputs.version }}.dmg
+          if-no-files-found: error
+
+  linux-flatpak-and-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same apt-get list ci.yml installs for Slint Linux builds.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev libxcb-xkb-dev libxkbcommon-dev \
+            libxkbcommon-x11-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libinput-dev libudev-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install flatpak-builder + freedesktop runtime/SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y flathub \
+            org.freedesktop.Platform//24.08 \
+            org.freedesktop.Sdk//24.08
+
+      - name: Build flatpak bundle
+        working-directory: apps/desktop/packaging/linux/flatpak
+        run: |
+          flatpak-builder --force-clean --user --repo=repo build-dir org.relic.Relic.yml
+          flatpak build-bundle repo \
+            "$GITHUB_WORKSPACE/target/flatpak/relic-desktop-${{ github.event.inputs.version }}.flatpak" \
+            org.relic.Relic
+        shell: bash
+
+      - name: Install appimagetool
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/appimagetool" \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$HOME/.local/bin/appimagetool"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        shell: bash
+
+      - name: Build AppImage
+        env:
+          RELIC_VERSION: ${{ github.event.inputs.version }}
+        run: bash apps/desktop/packaging/linux/appimage/build-appimage.sh
+        shell: bash
+
+      - name: Upload flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relic-desktop-${{ github.event.inputs.version }}-linux-flatpak
+          path: target/flatpak/relic-desktop-${{ github.event.inputs.version }}.flatpak
+          if-no-files-found: error
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relic-desktop-${{ github.event.inputs.version }}-linux-appimage
+          path: target/appimage/relic-desktop-${{ github.event.inputs.version }}-x86_64.AppImage
+          if-no-files-found: error

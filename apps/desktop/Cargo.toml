@@ -1,6 +1,6 @@
 [package]
 name = "relic-desktop"
-description = "Relic's desktop shell (stub pending Phase 2 implementation; UI stack is Slint per ADR-002)"
+description = "Relic's desktop shell (Slint UI per ADR-002)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

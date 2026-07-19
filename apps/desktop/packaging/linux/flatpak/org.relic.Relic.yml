@@ -1,0 +1,36 @@
+id: org.relic.Relic
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: relic-desktop
+finish-args:
+  # Slint (winit/femtovg) needs X11 + GL + Wayland socket access for
+  # windowing. These are display-only permissions; NO network permission
+  # is requested — Relic is local-first / zero-telemetry (PLAN.md §1,
+  # hard rule #1), and the T0 desktop shell makes no outbound calls.
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --share=ipc
+  # Relic reads ROM libraries from anywhere the user keeps them, so it
+  # needs broad filesystem read access. It writes only to its own data
+  # dir under ~/.var/app/org.relic.Relic/data.
+  - --filesystem=home:ro
+  - --filesystem=host:ro
+modules:
+  - name: relic-desktop
+    buildsystem: simple
+    build-commands:
+      # Build only the desktop shell (and its core/ffi deps) in release
+      # mode, then install the binary to /app/bin.
+      - cargo build --release -p relic-desktop
+      - install -Dm755 target/release/relic-desktop /app/bin/relic-desktop
+      - install -Dm644 org.relic.Relic.desktop /app/share/applications/org.relic.Relic.desktop
+      - install -Dm644 org.relic.Relic.metainfo.xml /app/share/metainfo/org.relic.Relic.metainfo.xml
+    sources:
+      - type: dir
+        path: ../../../..
+      - type: file
+        path: org.relic.Relic.desktop
+      - type: file
+        path: org.relic.Relic.metainfo.xml

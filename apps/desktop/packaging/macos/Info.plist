@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Relic Desktop — Info.plist template for the relic-desktop.app bundle.
+
+  The release binary built by `cargo build --release -p relic-desktop`
+  is placed at relic-desktop.app/Contents/MacOS/relic-desktop by
+  build-dmg.sh. CFBundleVersion / CFBundleShortVersionString track the
+  Cargo package version (workspace.package.version = 0.1.0); bump both
+  together when the workspace version moves.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Relic Desktop</string>
+  <key>CFBundleDisplayName</key>
+  <string>Relic Desktop</string>
+  <key>CFBundleIdentifier</key>
+  <string>org.relic.desktop</string>
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleExecutable</key>
+  <string>relic-desktop</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>GPL-3.0-or-later</string>
+  <key>CFBundleGetInfoString</key>
+  <string>Relic Desktop 0.1.0, GPL-3.0-or-later</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.entertainment</string>
+  <!--
+    Relic is local-first / zero-telemetry (PLAN.md §1, hard rule #1).
+    No URL schemes, no network usage entitlement needed at T0.
+  -->
+</dict>
+</plist>

@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Relic desktop — WiX Toolset v4 source.
+
+  Produces an MSI that installs target/release/relic-desktop.exe into
+  %ProgramFiles%\Relic\ and adds a Start Menu shortcut.
+
+  Build (WiX v4 CLI):
+      wix build -o target/wix/relic-desktop-0.1.0.msi \
+          apps/desktop/packaging/windows/main.wxs
+
+  Build (cargo-wix, wraps WiX v3 + this style of source):
+      cargo wix -p relic-desktop --output target/wix/relic-desktop-0.1.0.msi
+
+  Both invocations assume `cargo build --release -p relic-desktop` has
+  already produced target/release/relic-desktop.exe.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Relic Desktop"
+    Manufacturer="Relic"
+    Version="0.1.0"
+    Language="1033"
+    Codepage="1252"
+    InstallerVersion="500">
+
+    <SummaryInformation
+      Description="Relic Desktop 0.1.0 installer"
+      Manufacturer="Relic"
+      Keywords="relic,retro,launcher,desktop,Slint" />
+
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Relic Desktop is already installed." />
+    <Media Id="1" Cabinet="relic.cab" EmbedCab="yes" />
+
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
+    <UI>
+      <UIRef Id="WixUI_InstallDir" />
+    </UI>
+
+    <Feature Id="ProductFeature" Title="Relic Desktop" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLDIR" Name="Relic">
+        <Directory Id="BinDir" Name="bin" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="StartMenuDir" Name="Relic" />
+    </StandardDirectory>
+  </Package>
+
+  <Fragment Id="ProductComponents">
+    <ComponentGroup Id="ProductComponents" Directory="BinDir">
+      <Component Id="MainExe" Guid="8d7c3a3e-1f2b-4c6e-9d8a-2b1c4e5f7a01">
+        <File Id="RelicDesktopExe"
+              Source="$(env.CARGO_TARGET_DIR)\release\relic-desktop.exe"
+              KeyPath="yes"
+              Checksum="yes" />
+
+        <Shortcut Id="StartMenuShortcut"
+                  Directory="StartMenuDir"
+                  Name="Relic Desktop"
+                  WorkingDirectory="BinDir"
+                  Advertise="yes"
+                  Description="Local-first, zero-telemetry retro game launcher" />
+
+        <RemoveFolder Id="RemoveStartMenuDir"
+                      Directory="StartMenuDir"
+                      On="uninstall" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

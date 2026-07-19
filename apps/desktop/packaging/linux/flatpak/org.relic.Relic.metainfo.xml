@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata for Relic Desktop.
+
+  Per PLAN.md §1 hard rule #1 (zero telemetry), this component declares
+  NO network access requirement. The desktop shell is fully functional
+  offline; the flatpak manifest requests no --share=network finish-arg.
+-->
+<component type="desktop-application">
+  <id>org.relic.Relic</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Relic Desktop</name>
+  <summary>Local-first, zero-telemetry retro game launcher</summary>
+  <description>
+    <p>
+      Relic is a local-first, zero-telemetry, open-source retro game
+      frontend. It organizes personal ROM collections and boots
+      standalone emulators, entirely offline by default. The desktop
+      shell provides a gamepad-navigable, themeable game grid built with
+      Slint over the same headless core engine the relic-cli uses.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.relic.Relic.desktop</launchable>
+  <url type="homepage">https://github.com/vaale/relic</url>
+  <provides>
+    <binary>relic-desktop</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-07-19">
+      <description>
+        <p>Initial packaging of the relic-desktop shell.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1" />
+  <!-- No network-related interactions; the app is offline by design. -->
+</component>

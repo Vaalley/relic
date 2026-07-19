@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Relic Desktop
+GenericName=Retro Game Launcher
+Comment=Local-first, zero-telemetry retro game launcher
+Exec=relic-desktop
+Icon=org.relic.Relic
+Terminal=false
+Categories=Game;Emulator;
+Keywords=retro;emulator;launcher;games;rom;
+StartupWMClass=relic-desktop

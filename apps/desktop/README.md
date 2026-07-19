@@ -31,3 +31,48 @@ window isn't empty before you've pointed it at a real library.
   emulator exits) — acceptable for now since Relic itself isn't meant to be
   interacted with while a game is running, but worth revisiting for
   responsiveness (e.g. a "Relic is paused" state) before 1.0.
+
+## Packaging
+
+PLAN.md §9 Phase 2 exit criteria calls for MSI (Windows), dmg (macOS),
+flatpak and AppImage (Linux). Sources and per-platform build scripts live
+under `apps/desktop/packaging/`; the CI workflow
+`.github/workflows/release.yml` builds all four on `workflow_dispatch`
+only (manually triggered, never automatic — no git tags, no GitHub
+Release, no registry publish; artifacts stay as workflow-run artifacts).
+
+Each platform assumes `cargo build --release -p relic-desktop` has
+produced `target/release/relic-desktop` (or `.exe` on Windows) first.
+
+### Windows — MSI
+
+WiX Toolset v4 source + Start Menu shortcut. See
+`packaging/windows/README.md` for prerequisites and the exact `wix build`
+/ `cargo wix` invocation.
+
+### macOS — dmg
+
+`packaging/macos/build-dmg.sh` builds the release binary, assembles
+`relic-desktop.app` (bundle id `org.relic.desktop`, version from
+`Info.plist`), and runs `hdiutil` to produce a compressed dmg with a
+drag-to-Applications layout. See `packaging/macos/README.md`. Notarization
+is intentionally left to the release owner (no Apple Developer ID in
+repo).
+
+### Linux — flatpak
+
+`packaging/linux/flatpak/org.relic.Relic.yml` is a flatpak-builder
+manifest against `org.freedesktop.Platform//24.08` that builds
+`relic-desktop` via cargo inside the sandbox and ships the
+`org.relic.Relic.desktop` + `org.relic.Relic.metainfo.xml` (AppStream)
+files alongside it. Per PLAN.md §1 hard rule #1, the manifest requests
+**no** `--share=network` finish-arg — the desktop shell is fully
+functional offline.
+
+### Linux — AppImage
+
+`packaging/linux/appimage/build-appimage.sh` stages an `AppDir` (binary,
+`.desktop`, `AppRun` shim) and runs `appimagetool` to produce
+`target/appimage/relic-desktop-<version>-x86_64.AppImage`. Requires
+`appimagetool` on `$PATH` (or `APPIMAGETOOL=/path/to/it`). See the script
+header for details.

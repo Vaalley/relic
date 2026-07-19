@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# AppRun entrypoint for the relic-desktop AppImage.
+# Resolves the directory the AppImage is mounted at and execs the
+# release binary inside, forwarding all args.
+set -euo pipefail
+HERE="$(dirname "$(readlink -f "${BASH_SOURCE[0]:-$0}")")"
+exec "$HERE/bin/relic-desktop" "$@"
