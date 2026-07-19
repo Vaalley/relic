@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use relic_core::api::{Engine, GameRow};
 use relic_core::events::Event;
-use slint::{ModelRc, StandardListViewItem, VecModel};
+use slint::{Model, ModelRc, StandardListViewItem, VecModel};
 
 fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/mini")
@@ -118,6 +118,7 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(slug) = slugs.get(current_system.get()) else {
                 window.set_games_heading("Games".into());
                 window.set_games_model(ModelRc::new(VecModel::from(Vec::<GameItem>::new())));
+                window.set_selected_game_index(-1);
                 return;
             };
             let search = (!search.trim().is_empty()).then_some(search.trim());
@@ -136,6 +137,10 @@ fn main() -> Result<(), slint::PlatformError> {
                 .collect();
             window.set_games_model(ModelRc::new(VecModel::from(items)));
             *current_games.borrow_mut() = games;
+            // A refreshed list invalidates any prior selection (system/search
+            // changed, or a rescan reordered rows) — start unselected rather
+            // than risk highlighting the wrong game.
+            window.set_selected_game_index(-1);
 
             let profile = engine
                 .borrow()
@@ -589,6 +594,112 @@ fn main() -> Result<(), slint::PlatformError> {
             window.set_show_detail(false);
         }
     });
+
+    window.on_game_nav_up({
+        let window_weak = window.as_weak();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let len = window.get_games_model().row_count() as i32;
+            if len == 0 {
+                return;
+            }
+            let current = window.get_selected_game_index();
+            let next = if current <= 0 { len - 1 } else { current - 1 };
+            window.set_selected_game_index(next);
+        }
+    });
+
+    window.on_game_nav_down({
+        let window_weak = window.as_weak();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let len = window.get_games_model().row_count() as i32;
+            if len == 0 {
+                return;
+            }
+            let current = window.get_selected_game_index();
+            let next = if current < 0 || current >= len - 1 {
+                0
+            } else {
+                current + 1
+            };
+            window.set_selected_game_index(next);
+        }
+    });
+
+    window.on_game_nav_activate({
+        let window_weak = window.as_weak();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let idx = window.get_selected_game_index();
+            if idx < 0 {
+                return;
+            }
+            let model = window.get_games_model();
+            if let Some(game) = model.row_data(idx as usize) {
+                window.invoke_game_launch_requested(game.id);
+            }
+        }
+    });
+
+    // Gamepad support (PLAN.md Phase 2 exit criteria): D-pad and the South
+    // face button are bridged into the same key events `games-focus`
+    // already handles for keyboard navigation, so there is exactly one
+    // navigation code path, not two. Gilrs::new() can fail on platforms/
+    // sessions with no usable gamepad backend; degrade to keyboard-only
+    // navigation rather than fail to start.
+    let gamepad_timer = slint::Timer::default();
+    if let Ok(mut gilrs_ctx) = gilrs::Gilrs::new() {
+        let window_weak = window.as_weak();
+        gamepad_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(50),
+            move || {
+                let Some(window) = window_weak.upgrade() else {
+                    return;
+                };
+                while let Some(gilrs::Event { event, .. }) = gilrs_ctx.next_event() {
+                    let key = match event {
+                        gilrs::EventType::ButtonPressed(gilrs::Button::DPadUp, _) => {
+                            Some(slint::platform::Key::UpArrow)
+                        }
+                        gilrs::EventType::ButtonPressed(gilrs::Button::DPadDown, _) => {
+                            Some(slint::platform::Key::DownArrow)
+                        }
+                        gilrs::EventType::ButtonPressed(gilrs::Button::DPadLeft, _) => {
+                            Some(slint::platform::Key::LeftArrow)
+                        }
+                        gilrs::EventType::ButtonPressed(gilrs::Button::DPadRight, _) => {
+                            Some(slint::platform::Key::RightArrow)
+                        }
+                        gilrs::EventType::ButtonPressed(gilrs::Button::South, _) => {
+                            Some(slint::platform::Key::Return)
+                        }
+                        _ => None,
+                    };
+                    let Some(key) = key else {
+                        continue;
+                    };
+                    window
+                        .window()
+                        .dispatch_event(slint::platform::WindowEvent::KeyPressed {
+                            text: key.into(),
+                        });
+                    window
+                        .window()
+                        .dispatch_event(slint::platform::WindowEvent::KeyReleased {
+                            text: key.into(),
+                        });
+                }
+            },
+        );
+    }
 
     window.run()
 }

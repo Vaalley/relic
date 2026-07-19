@@ -1,7 +1,9 @@
 // Relic desktop shell — Phase 2 system/game browser skeleton (ADR-002, Slint).
-// Real data from relic-core via Engine, wired up in src/main.rs. Still missing
-// from PLAN.md Phase 2 scope: first-run wizard (emulator auto-detect), gamepad
-// input. Colors come from the `Palette` global, populated in main.rs via
+// Real data from relic-core via Engine, wired up in src/main.rs. The games
+// list is keyboard-navigable (Up/Down/Return via `games-focus`, a
+// FocusScope); main.rs bridges gamepad D-pad/South-button input into the
+// same key events so gamepad and keyboard navigation share one code path.
+// Colors come from the `Palette` global, populated in main.rs via
 // relic-themes' resolved default theme (PLAN.md section 6 layer 1).
 
 import { Button, LineEdit, ListView, StandardListView } from "std-widgets.slint";
@@ -64,6 +66,7 @@ export component MainWindow inherits Window {
     in property <string> detail-system;
     in property <string> detail-path;
     in property <bool> detail-favorite;
+    in-out property <int> selected-game-index: -1;
 
     callback system-selected(int);
     callback search-edited(string);
@@ -80,6 +83,9 @@ export component MainWindow inherits Window {
     callback detail-play-requested();
     callback detail-favorite-toggled();
     callback detail-back-requested();
+    callback game-nav-up();
+    callback game-nav-down();
+    callback game-nav-activate();
 
     VerticalLayout {
         padding: 12px;
@@ -205,42 +211,65 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                ListView {
-                    for game in games-model: Rectangle {
-                        height: 26px;
-
-                        row-area := TouchArea {
-                            clicked => {
-                                game-info-requested(game.id);
-                            }
-                            double-clicked => {
-                                game-launch-requested(game.id);
-                            }
+                games-focus := FocusScope {
+                    key-pressed(event) => {
+                        if (event.text == Key.UpArrow) {
+                            game-nav-up();
+                            accept
+                        } else if (event.text == Key.DownArrow) {
+                            game-nav-down();
+                            accept
+                        } else if (event.text == Key.Return) {
+                            game-nav-activate();
+                            accept
+                        } else {
+                            reject
                         }
+                    }
 
-                        HorizontalLayout {
-                            padding-left: 4px;
-                            spacing: 6px;
-                            alignment: start;
+                    init => {
+                        self.focus();
+                    }
 
-                            star-area := TouchArea {
-                                width: 16px;
+                    ListView {
+                        for game[idx] in games-model: Rectangle {
+                            height: 26px;
+                            border-width: idx == selected-game-index ? 2px : 0px;
+                            border-color: Palette.accent;
+
+                            row-area := TouchArea {
                                 clicked => {
-                                    favorite-toggled(game.id);
+                                    game-info-requested(game.id);
+                                }
+                                double-clicked => {
+                                    game-launch-requested(game.id);
+                                }
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 4px;
+                                spacing: 6px;
+                                alignment: start;
+
+                                star-area := TouchArea {
+                                    width: 16px;
+                                    clicked => {
+                                        favorite-toggled(game.id);
+                                    }
+
+                                    Text {
+                                        text: game.favorite ? "★" : "☆";
+                                        color: Palette.favorite;
+                                        font-size: 13px;
+                                    }
                                 }
 
                                 Text {
-                                    text: game.favorite ? "★" : "☆";
-                                    color: Palette.favorite;
+                                    text: game.name;
+                                    color: Palette.text;
                                     font-size: 13px;
+                                    vertical-alignment: center;
                                 }
-                            }
-
-                            Text {
-                                text: game.name;
-                                color: Palette.text;
-                                font-size: 13px;
-                                vertical-alignment: center;
                             }
                         }
                     }
