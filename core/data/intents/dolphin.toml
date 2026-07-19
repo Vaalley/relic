@@ -19,6 +19,7 @@ activity = "org.dolphinemu.dolphinemu.ui.main.MainActivity"
 action = "android.intent.action.MAIN"
 data_mode = "extra"
 data_extra_name = "AutoStartFile"
+systems = ["gamecube", "wii"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

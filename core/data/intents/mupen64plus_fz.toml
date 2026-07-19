@@ -44,6 +44,7 @@ action = "android.intent.action.VIEW"
 # (discussion #1136) suggesting SAF support exists, but frontend launch
 # via content URI is unconfirmed.
 data_mode = "data"
+systems = ["n64"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

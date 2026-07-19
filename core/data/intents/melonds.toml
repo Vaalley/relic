@@ -14,6 +14,7 @@ package = "me.magnum.melonds"
 activity = "me.magnum.melonds.ui.emulator.EmulatorActivity"
 action = "android.intent.action.VIEW"
 data_mode = "data"
+systems = ["nds"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

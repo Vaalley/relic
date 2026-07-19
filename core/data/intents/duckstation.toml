@@ -16,6 +16,7 @@ activity = "com.github.stenzek.duckstation.EmulationActivity"
 action = "android.intent.action.MAIN"
 data_mode = "extra"
 data_extra_name = "bootPath"
+systems = ["psx"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

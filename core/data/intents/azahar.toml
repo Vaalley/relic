@@ -43,6 +43,7 @@ package = "io.github.lime3ds.android"
 activity = "org.citra.citra_emu.activities.EmulationActivity"
 action = "android.intent.action.VIEW"
 data_mode = "data"
+systems = ["n3ds"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

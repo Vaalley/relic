@@ -635,16 +635,17 @@ fn cmd_stats(db: &Path) -> Result<(), Box<dyn Error>> {
 
 fn cmd_intents() -> Result<(), Box<dyn Error>> {
     println!(
-        "{:<18} {:<24} {:<10} PACKAGE",
-        "ID", "DISPLAY NAME", "DATA MODE"
+        "{:<18} {:<24} {:<10} {:<32} SYSTEMS",
+        "ID", "DISPLAY NAME", "DATA MODE", "PACKAGE"
     );
     for (stem, t) in intents::builtin_intents()? {
         println!(
-            "{:<18} {:<24} {:<10} {}",
+            "{:<18} {:<24} {:<10} {:<32} {}",
             stem,
             t.display_name,
             format!("{:?}", t.data_mode).to_lowercase(),
-            t.package
+            t.package,
+            t.systems.join(",")
         );
     }
     Ok(())

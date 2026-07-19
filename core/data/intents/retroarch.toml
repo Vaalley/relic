@@ -16,6 +16,7 @@ activity = "com.retroarch.browser.retroactivity.RetroActivityFuture"
 action = "android.intent.action.MAIN"
 data_mode = "extra"
 data_extra_name = "ROM"
+systems = ["*"]  # All libretro-supported systems; {core} derives the actual core per system.
 min_version_code = 1  # UNVERIFIED - needs device testing: lowest versionCode known to expose RetroActivityFuture.
 
 flags = [

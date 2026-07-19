@@ -129,6 +129,10 @@ pub struct IntentTemplate {
     pub extras: Vec<Extra>,
     #[serde(default)]
     pub per_system: HashMap<String, PerSystemOverride>,
+    /// System slugs this template targets, or `["*"]` for every registry
+    /// system (docs/android-intents.md §4.1). Lets a shell pick candidate
+    /// templates for a game's system without any per-emulator code.
+    pub systems: Vec<String>,
 }
 
 /// Parse a template from its TOML source. Does not validate (§6) — call
@@ -300,7 +304,178 @@ pub fn validate(
         }
     }
 
+    // 11. systems: non-empty, either exactly ["*"] or known slugs (no mixing).
+    if template.systems.is_empty() {
+        errors.push("systems must not be empty".into());
+    } else if template.systems.iter().any(|s| s == "*") {
+        if template.systems.len() > 1 {
+            errors.push("systems: '*' must be the only entry, not mixed with slugs".into());
+        }
+    } else {
+        for slug in &template.systems {
+            if !known_slugs.iter().any(|s| s == slug) {
+                errors.push(format!("systems entry '{slug}' is not a known system slug"));
+            }
+        }
+    }
+
     errors
+}
+
+/// The system slugs a template applies to, for shells picking candidate
+/// templates for a game's system. `known_slugs` is the full registry, used to
+/// expand a `["*"]` wildcard (docs/android-intents.md §4.1).
+pub fn applies_to(template: &IntentTemplate, system_slug: &str) -> bool {
+    template
+        .systems
+        .iter()
+        .any(|s| s == "*" || s == system_slug)
+}
+
+/// One resolved `[[extras]]` entry, ready for the shell to call the matching
+/// `putExtra` overload with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedExtra {
+    pub name: String,
+    pub extra_type: ExtraType,
+    pub value: String,
+}
+
+/// A template fully merged with its `per_system` override (if any) and with
+/// every placeholder substituted — everything the shell needs to build and
+/// fire one explicit `Intent` (docs/android-intents.md §5). `flags` always
+/// includes `FLAG_GRANT_READ_URI_PERMISSION` and `FLAG_ACTIVITY_NEW_TASK`
+/// (added implicitly per §5 step 7 if the template didn't list them).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedIntent {
+    pub package: String,
+    pub activity: String,
+    pub action: String,
+    pub data_mode: DataMode,
+    pub data_extra_name: Option<String>,
+    pub data_mime_type: Option<String>,
+    pub extras: Vec<ResolvedExtra>,
+    pub flags: Vec<String>,
+}
+
+/// Placeholder values available at launch time (docs/android-intents.md
+/// §4.3). `core` must already be the full path the shell wants substituted
+/// (e.g. RetroArch's `/data/data/<pkg>/cores/<stem>_libretro_android.so`) —
+/// this module has no notion of Android package layout, only string
+/// substitution.
+pub struct LaunchContext<'a> {
+    pub rom_uri: &'a str,
+    pub rom_path: &'a str,
+    pub core: Option<&'a str>,
+}
+
+/// Merge `template`'s `per_system.<system_slug>` override (if present) over
+/// its top-level fields, then substitute placeholders in every extra value.
+/// Assumes `template` already passed [`validate`] — this does not re-check
+/// unknown placeholders or `{core}`-outside-RetroArch, it just substitutes.
+pub fn resolve(
+    template: &IntentTemplate,
+    system_slug: &str,
+    ctx: &LaunchContext<'_>,
+) -> ResolvedIntent {
+    let over = template.per_system.get(system_slug);
+
+    let activity = over
+        .and_then(|o| o.activity.clone())
+        .unwrap_or_else(|| template.activity.clone());
+    let action = over
+        .and_then(|o| o.action.clone())
+        .unwrap_or_else(|| template.action.clone());
+    let data_mode = over.and_then(|o| o.data_mode).unwrap_or(template.data_mode);
+    let data_extra_name = over
+        .and_then(|o| o.data_extra_name.clone())
+        .or_else(|| template.data_extra_name.clone());
+    let data_mime_type = over
+        .and_then(|o| o.data_mime_type.clone())
+        .or_else(|| template.data_mime_type.clone());
+
+    // §4.4: extras/flags replace wholesale when the override supplies any.
+    let extras_src: &[Extra] = match over {
+        Some(o) if !o.extras.is_empty() => &o.extras,
+        _ => &template.extras,
+    };
+    let flags_src: &[String] = match over {
+        Some(o) if !o.flags.is_empty() => &o.flags,
+        _ => &template.flags,
+    };
+
+    let extras = extras_src
+        .iter()
+        .map(|e| ResolvedExtra {
+            name: e.name.clone(),
+            extra_type: e.extra_type,
+            value: substitute(&e.value, ctx),
+        })
+        .collect();
+
+    let mut flags: Vec<String> = flags_src.to_vec();
+    if !flags.iter().any(|f| f == "FLAG_GRANT_READ_URI_PERMISSION") {
+        flags.push("FLAG_GRANT_READ_URI_PERMISSION".to_string());
+    }
+    if !flags.iter().any(|f| f == "FLAG_ACTIVITY_NEW_TASK") {
+        flags.push("FLAG_ACTIVITY_NEW_TASK".to_string());
+    }
+
+    ResolvedIntent {
+        package: template.package.clone(),
+        activity,
+        action,
+        data_mode,
+        data_extra_name,
+        data_mime_type,
+        extras,
+        flags,
+    }
+}
+
+/// Substitute `{rom_uri}`/`{rom_path}`/`{core}` in a `value` string, treating
+/// `{{`/`}}` as literal braces (docs/android-intents.md §4.3). Any other
+/// `{name}` is left as-is — [`validate`] is what rejects unknown
+/// placeholders before a template ever reaches this function.
+fn substitute(value: &str, ctx: &LaunchContext<'_>) -> String {
+    let mut out = String::with_capacity(value.len());
+    let mut i = 0;
+    while i < value.len() {
+        let rest = &value[i..];
+        if let Some(stripped) = rest.strip_prefix("{{") {
+            out.push('{');
+            i = value.len() - stripped.len();
+        } else if let Some(stripped) = rest.strip_prefix("}}") {
+            out.push('}');
+            i = value.len() - stripped.len();
+        } else if let Some(after) = rest.strip_prefix('{') {
+            match after.find('}') {
+                Some(end) => {
+                    let name = &after[..end];
+                    match name {
+                        "rom_uri" => out.push_str(ctx.rom_uri),
+                        "rom_path" => out.push_str(ctx.rom_path),
+                        "core" => out.push_str(ctx.core.unwrap_or_default()),
+                        _ => {
+                            out.push('{');
+                            out.push_str(name);
+                            out.push('}');
+                        }
+                    }
+                    i = value.len() - after.len() + end + 1;
+                }
+                None => {
+                    out.push('{');
+                    i += 1;
+                }
+            }
+        } else {
+            let ch = rest.chars().next().expect("i < value.len()");
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+    }
+    out
 }
 
 fn find_placeholders(value: &str) -> Vec<String> {
@@ -388,6 +563,7 @@ mod tests {
             activity = "com.example.foo.MainActivity"
             action = "android.intent.action.VIEW"
             data_mode = "data"
+            systems = ["snes"]
             "#,
         )
         .unwrap();
@@ -406,6 +582,7 @@ mod tests {
             action = "android.intent.action.MAIN"
             data_mode = "extra"
             data_extra_name = "ROM"
+            systems = ["snes"]
 
             [[extras]]
             name = "ROM"
@@ -429,6 +606,7 @@ mod tests {
             action = "android.intent.action.VIEW"
             data_mode = "data"
             flags = ["FLAG_GRANT_WRITE_URI_PERMISSION"]
+            systems = ["snes"]
             "#,
         )
         .unwrap();
@@ -447,6 +625,7 @@ mod tests {
             action = "android.intent.action.MAIN"
             data_mode = "extra"
             data_extra_name = "ROM"
+            systems = ["snes"]
 
             [[extras]]
             name = "ROM"
@@ -470,6 +649,7 @@ mod tests {
             action = "android.intent.action.MAIN"
             data_mode = "extra"
             data_extra_name = "ROM"
+            systems = ["snes"]
 
             [[extras]]
             name = "FLAG"
@@ -493,6 +673,7 @@ mod tests {
             action = "android.intent.action.MAIN"
             data_mode = "extra"
             data_extra_name = "ROM"
+            systems = ["snes"]
 
             [[extras]]
             name = "SOMETHING_ELSE"
@@ -515,6 +696,7 @@ mod tests {
             activity = "com.example.foo.MainActivity"
             action = "android.intent.action.VIEW"
             data_mode = "data"
+            systems = ["snes"]
 
             [per_system.not_a_real_slug]
             action = "android.intent.action.MAIN"
@@ -529,5 +711,200 @@ mod tests {
     fn literal_braces_are_not_placeholders() {
         assert_eq!(find_placeholders("{{literal}}"), Vec::<String>::new());
         assert_eq!(find_placeholders("{rom_uri}"), vec!["rom_uri".to_string()]);
+    }
+
+    #[test]
+    fn empty_systems_is_rejected() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = []
+            "#,
+        )
+        .unwrap();
+        let errors = validate(&t, "foo", &["snes".to_string()]);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("systems must not be empty")));
+    }
+
+    #[test]
+    fn unknown_systems_entry_is_rejected() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = ["not_a_real_slug"]
+            "#,
+        )
+        .unwrap();
+        let errors = validate(&t, "foo", &["snes".to_string()]);
+        assert!(errors
+            .iter()
+            .any(|e| e.contains("systems entry 'not_a_real_slug'")));
+    }
+
+    #[test]
+    fn wildcard_systems_cannot_mix_with_slugs() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = ["*", "snes"]
+            "#,
+        )
+        .unwrap();
+        let errors = validate(&t, "foo", &["snes".to_string()]);
+        assert!(errors.iter().any(|e| e.contains("must be the only entry")));
+    }
+
+    #[test]
+    fn applies_to_wildcard_matches_any_system() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = ["*"]
+            "#,
+        )
+        .unwrap();
+        assert!(applies_to(&t, "snes"));
+        assert!(applies_to(&t, "n64"));
+    }
+
+    #[test]
+    fn applies_to_concrete_list_matches_only_listed_systems() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = ["psx"]
+            "#,
+        )
+        .unwrap();
+        assert!(applies_to(&t, "psx"));
+        assert!(!applies_to(&t, "snes"));
+    }
+
+    #[test]
+    fn resolve_substitutes_placeholders() {
+        let t = parse_intent(
+            r#"
+            id = "retroarch"
+            display_name = "RetroArch"
+            package = "com.retroarch"
+            activity = "com.retroarch.browser.retroactivity.RetroActivityFuture"
+            action = "android.intent.action.MAIN"
+            data_mode = "extra"
+            data_extra_name = "ROM"
+            systems = ["*"]
+            flags = ["FLAG_ACTIVITY_CLEAR_TOP"]
+
+            [[extras]]
+            name = "ROM"
+            type = "string"
+            value = "{rom_uri}"
+
+            [[extras]]
+            name = "LIBRETRO"
+            type = "string"
+            value = "{core}"
+
+            [[extras]]
+            name = "PATH_ECHO"
+            type = "string"
+            value = "literal {{brace}} {rom_path}"
+            "#,
+        )
+        .unwrap();
+
+        let ctx = LaunchContext {
+            rom_uri: "content://com.relic/rom.zip",
+            rom_path: "snes/game.zip",
+            core: Some("/data/data/com.retroarch/cores/snes9x_libretro_android.so"),
+        };
+        let resolved = resolve(&t, "snes", &ctx);
+
+        assert_eq!(resolved.package, "com.retroarch");
+        assert_eq!(resolved.extras[0].value, "content://com.relic/rom.zip");
+        assert_eq!(
+            resolved.extras[1].value,
+            "/data/data/com.retroarch/cores/snes9x_libretro_android.so"
+        );
+        assert_eq!(resolved.extras[2].value, "literal {brace} snes/game.zip");
+        // Implicit flags added, existing ones preserved.
+        assert!(resolved
+            .flags
+            .iter()
+            .any(|f| f == "FLAG_ACTIVITY_CLEAR_TOP"));
+        assert!(resolved
+            .flags
+            .iter()
+            .any(|f| f == "FLAG_GRANT_READ_URI_PERMISSION"));
+        assert!(resolved.flags.iter().any(|f| f == "FLAG_ACTIVITY_NEW_TASK"));
+    }
+
+    #[test]
+    fn resolve_applies_per_system_override() {
+        let t = parse_intent(
+            r#"
+            id = "foo"
+            display_name = "Foo"
+            package = "com.example.foo"
+            activity = "com.example.foo.MainActivity"
+            action = "android.intent.action.VIEW"
+            data_mode = "data"
+            systems = ["gamecube", "wii"]
+
+            [[extras]]
+            name = "DEFAULT"
+            type = "string"
+            value = "base"
+
+            [per_system.wii]
+            activity = "com.example.foo.WiiActivity"
+            extras = [
+              { name = "WII_ONLY", type = "string", value = "{rom_uri}" },
+            ]
+            "#,
+        )
+        .unwrap();
+        let ctx = LaunchContext {
+            rom_uri: "content://x",
+            rom_path: "wii/game.iso",
+            core: None,
+        };
+
+        let base = resolve(&t, "gamecube", &ctx);
+        assert_eq!(base.activity, "com.example.foo.MainActivity");
+        assert_eq!(base.extras.len(), 1);
+        assert_eq!(base.extras[0].name, "DEFAULT");
+
+        let overridden = resolve(&t, "wii", &ctx);
+        assert_eq!(overridden.activity, "com.example.foo.WiiActivity");
+        assert_eq!(overridden.extras.len(), 1);
+        assert_eq!(overridden.extras[0].name, "WII_ONLY");
+        assert_eq!(overridden.extras[0].value, "content://x");
     }
 }

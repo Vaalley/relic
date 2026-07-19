@@ -28,6 +28,7 @@ package = "org.ppsspp.ppsspplegacy"
 activity = "org.ppsspp.ppsspp.PpssppActivity"
 action = "android.intent.action.VIEW"
 data_mode = "data"
+systems = ["psp"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",

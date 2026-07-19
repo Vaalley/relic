@@ -134,6 +134,7 @@ are rejected by the loader (mirrors `core/src/systems/mod.rs`'
 | `flags` | array of strings | optional | Standard Android `Intent` flag names, bare (e.g. `FLAG_GRANT_READ_URI_PERMISSION`, `FLAG_ACTIVITY_NEW_TASK`). The resolver maps each name to the corresponding `Intent.FLAG_*` constant. Unknown names fail validation. |
 | `min_version_code` | integer | optional | Lowest installed app `versionCode` this template is known to work against. If the installed package's `versionCode` is below this, the shell warns and offers to fall back to another profile. |
 | `per_system` | table | optional | Per-system overrides, keyed by Relic system slug (the slugs listed in `core/data/systems/`). Each sub-table may override `activity`, `action`, `data_mode`, `data_extra_name`, `data_mime_type`, `extras`, `flags`. See §4.4. |
+| `systems` | array of strings | yes | The Relic system slugs this template is a launch candidate for, or the single-element wildcard `["*"]` for every registry system (RetroArch only — it derives the actual libretro core per system via `{core}`). Lets the shell pick candidate templates for a game's system (`relic_core::intents::applies_to`) with no per-emulator code. Must not be empty; `"*"` may not be mixed with concrete slugs. |
 
 ### 4.2 `[[extras]]` array of tables
 
@@ -300,6 +301,8 @@ shipped template:
    `FLAG_GRANT_WRITE_URI_PERMISSION` is rejected.
 9. Every `per_system` key matches a slug listed in `core/data/systems/`.
 10. `min_version_code`, if present, is a non-negative integer.
+11. `systems` is non-empty. Its entries are either exactly `["*"]`, or every
+    entry is a known system slug (the two forms cannot mix).
 
 Rule 3 above is stricter in the implementation than "known vendor prefix"
 suggests: today it requires the literal `android.intent.action.` prefix. No

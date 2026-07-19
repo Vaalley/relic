@@ -53,6 +53,7 @@ activity = "org.uoyabause.android.Yabause"
 action = "android.intent.action.VIEW"
 data_mode = "extra"
 data_extra_name = "org.uoyabause.android.FileNameUri"
+systems = ["saturn"]
 
 flags = [
   "FLAG_ACTIVITY_NEW_TASK",
