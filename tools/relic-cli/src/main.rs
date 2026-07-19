@@ -191,6 +191,14 @@ enum Command {
         db: PathBuf,
         collection_id: i64,
     },
+    /// Match a No-Intro/Redump DAT file's entries against already-hashed
+    /// files for one system, updating canonical names on each CRC32 hit.
+    DatImport {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        system: String,
+        dat_path: PathBuf,
+    },
     /// List the built-in Android intent templates (core/data/intents/).
     Intents,
     /// Validate Android intent template(s) against docs/android-intents.md §6.
@@ -262,6 +270,11 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::CollectionDelete { db, collection_id } => {
             cmd_collection_delete(&db, collection_id)
         }
+        Command::DatImport {
+            db,
+            system,
+            dat_path,
+        } => cmd_dat_import(&db, &system, &dat_path),
         Command::Intents => cmd_intents(),
         Command::IntentValidate { path } => cmd_intent_validate(path.as_deref()),
     }
@@ -406,6 +419,14 @@ fn cmd_collection_delete(db: &Path, collection_id: i64) -> Result<(), Box<dyn Er
     let mut engine = Engine::open(db)?;
     engine.delete_collection(collection_id)?;
     println!("deleted collection #{collection_id}");
+    Ok(())
+}
+
+fn cmd_dat_import(db: &Path, system: &str, dat_path: &Path) -> Result<(), Box<dyn Error>> {
+    let xml = std::fs::read_to_string(dat_path)?;
+    let mut engine = Engine::open(db)?;
+    let stats = engine.import_dat(system, &xml)?;
+    println!("matched={} unmatched={}", stats.matched, stats.unmatched);
     Ok(())
 }
 

@@ -7,6 +7,7 @@ use crate::db::Db;
 use crate::events::Event;
 use crate::launch::{self, EmulatorRow, LaunchPlan, ProfileRow};
 use crate::media::{self, MediaRow, MediaStats};
+use crate::metadata::dat::{self, DatMatchStats};
 use crate::metadata::gamelist::{self, GamelistImportStats};
 use crate::scan::{self, ScanSummary};
 use crate::systems::{self, SystemDef};
@@ -245,6 +246,15 @@ impl Engine {
             }
         }
         Ok(total)
+    }
+
+    /// Match a No-Intro/Redump DAT file's entries against already-hashed
+    /// files (`scan::hash`) for one system, updating canonical names on
+    /// each CRC32 hit. Unlike `import_gamelists`/`export_gamelists`, this
+    /// isn't library-scoped — a DAT covers one system across every library.
+    pub fn import_dat(&mut self, system_slug: &str, dat_xml: &str) -> Result<DatMatchStats> {
+        let entries = dat::parse_dat(dat_xml)?;
+        dat::match_dat(&mut self.db, system_slug, &entries)
     }
 
     /// Export every system's games in a library back to

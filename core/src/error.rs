@@ -48,4 +48,7 @@ pub enum Error {
 
     #[error("collection {0} is a smart collection; games can't be added or removed directly")]
     NotManualCollection(i64),
+
+    #[error("malformed DAT file: {0}")]
+    DatParse(#[from] crate::metadata::dat::DatError),
 }
