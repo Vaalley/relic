@@ -86,6 +86,7 @@ export component MainWindow inherits Window {
     callback game-nav-up();
     callback game-nav-down();
     callback game-nav-activate();
+    callback theme-picker-requested();
 
     VerticalLayout {
         padding: 12px;
@@ -120,6 +121,13 @@ export component MainWindow inherits Window {
                 text: "Scraper";
                 clicked => {
                     scraper-toggled();
+                }
+            }
+
+            Button {
+                text: "Theme…";
+                clicked => {
+                    theme-picker-requested();
                 }
             }
         }

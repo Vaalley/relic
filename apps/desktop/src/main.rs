@@ -54,6 +54,61 @@ fn parse_hex_color(s: &str) -> slint::Color {
     slint::Color::from_rgb_u8(0, 0, 0)
 }
 
+/// `theme_dir/theme.toml`'s last-modified time, for hot-reload polling.
+/// `None` if the file doesn't exist or its mtime can't be read.
+fn theme_toml_mtime(theme_dir: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(theme_dir.join("theme.toml"))
+        .and_then(|m| m.modified())
+        .ok()
+}
+
+/// Load `theme_dir` (if any) and apply its resolved tokens to the window's
+/// `Palette` global, falling back to the bundled default on `None` or on any
+/// validation error (spec section 6: "a broken theme degrades to the
+/// default theme with a visible warning, never a crash"). Returns whether a
+/// custom theme was actually applied, so callers can decide whether to
+/// persist `theme_dir` as the active setting.
+fn apply_theme(window: &MainWindow, theme_dir: Option<&std::path::Path>) -> bool {
+    let (tokens, applied_custom) = match theme_dir {
+        Some(dir) => match relic_themes::load_theme_dir(dir) {
+            Ok(theme) => (
+                relic_themes::resolve(Some(&theme), relic_themes::Variant::Dark),
+                true,
+            ),
+            Err(issues) => {
+                let msg = issues
+                    .first()
+                    .map(|i| i.message.as_str())
+                    .unwrap_or("unknown error");
+                window.set_status_line(format!("Theme error, using default: {msg}").into());
+                (
+                    relic_themes::resolve(
+                        Some(relic_themes::default_theme()),
+                        relic_themes::Variant::Dark,
+                    ),
+                    false,
+                )
+            }
+        },
+        None => (
+            relic_themes::resolve(
+                Some(relic_themes::default_theme()),
+                relic_themes::Variant::Dark,
+            ),
+            false,
+        ),
+    };
+
+    let palette = window.global::<Palette>();
+    palette.set_bg(parse_hex_color(&tokens.colors.bg));
+    palette.set_surface(parse_hex_color(&tokens.colors.surface));
+    palette.set_text(parse_hex_color(&tokens.colors.text));
+    palette.set_text_dim(parse_hex_color(&tokens.colors.text_dim));
+    palette.set_accent(parse_hex_color(&tokens.colors.accent));
+    palette.set_favorite(parse_hex_color(&tokens.colors.favorite));
+    applied_custom
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let db_path = app_db_path();
     if let Some(parent) = db_path.parent() {
@@ -77,17 +132,17 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let window = MainWindow::new()?;
 
-    let tokens = relic_themes::resolve(
-        Some(relic_themes::default_theme()),
-        relic_themes::Variant::Dark,
-    );
-    let palette = window.global::<Palette>();
-    palette.set_bg(parse_hex_color(&tokens.colors.bg));
-    palette.set_surface(parse_hex_color(&tokens.colors.surface));
-    palette.set_text(parse_hex_color(&tokens.colors.text));
-    palette.set_text_dim(parse_hex_color(&tokens.colors.text_dim));
-    palette.set_accent(parse_hex_color(&tokens.colors.accent));
-    palette.set_favorite(parse_hex_color(&tokens.colors.favorite));
+    // Theme directory persists across restarts via the `settings` table
+    // (PLAN.md §6 layer 1); no setting yet means the bundled default.
+    let initial_theme_dir = engine
+        .get_setting("theme_dir")
+        .unwrap_or(None)
+        .map(PathBuf::from);
+    apply_theme(&window, initial_theme_dir.as_deref());
+    let theme_state: Rc<RefCell<Option<(PathBuf, std::time::SystemTime)>>> =
+        Rc::new(RefCell::new(initial_theme_dir.and_then(|dir| {
+            theme_toml_mtime(&dir).map(|mtime| (dir, mtime))
+        })));
 
     window.set_status_line(format!("core {} — {}", engine.version(), db_path.display()).into());
 
@@ -370,6 +425,34 @@ fn main() -> Result<(), slint::PlatformError> {
             window.set_status_line(format!("core {} — scanned {name}", eng.version()).into());
             drop(eng);
             refresh_systems();
+        }
+    });
+
+    window.on_theme_picker_requested({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let theme_state = Rc::clone(&theme_state);
+        move || {
+            let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+                return;
+            };
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            if !apply_theme(&window, Some(&folder)) {
+                // apply_theme already set a status line describing the
+                // validation error; don't persist a theme that failed to load.
+                return;
+            }
+            let path_str = folder.to_string_lossy().into_owned();
+            match engine.borrow_mut().set_setting("theme_dir", &path_str) {
+                Ok(()) => window.set_status_line(format!("Theme applied: {path_str}").into()),
+                Err(e) => {
+                    window.set_status_line(format!("Theme applied but not saved: {e}").into())
+                }
+            }
+            let mtime = theme_toml_mtime(&folder);
+            *theme_state.borrow_mut() = mtime.map(|mtime| (folder, mtime));
         }
     });
 
@@ -696,6 +779,36 @@ fn main() -> Result<(), slint::PlatformError> {
                         .dispatch_event(slint::platform::WindowEvent::KeyReleased {
                             text: key.into(),
                         });
+                }
+            },
+        );
+    }
+
+    // Theme hot reload (PLAN.md §9 Phase 5 exit criterion): poll theme.toml's
+    // mtime rather than a filesystem-watch crate, matching the polling
+    // pattern already used for gamepad input above — no extra dependency,
+    // fine-grained enough for a file a human just saved.
+    let theme_reload_timer = slint::Timer::default();
+    {
+        let window_weak = window.as_weak();
+        let theme_state = Rc::clone(&theme_state);
+        theme_reload_timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(1500),
+            move || {
+                let Some(window) = window_weak.upgrade() else {
+                    return;
+                };
+                let current = theme_state.borrow().clone();
+                let Some((dir, last_mtime)) = current else {
+                    return;
+                };
+                let Some(mtime) = theme_toml_mtime(&dir) else {
+                    return;
+                };
+                if mtime != last_mtime {
+                    apply_theme(&window, Some(&dir));
+                    *theme_state.borrow_mut() = Some((dir, mtime));
                 }
             },
         );
