@@ -52,11 +52,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import uniffi.relic_ffi.GameInfo
+import uniffi.relic_ffi.themeColors
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import java.io.File
+
+/**
+ * "#rrggbb" (the only format relic-themes emits) → opaque Compose [Color].
+ * Never throws, matching relic-themes' "never raises" guarantee.
+ */
+private fun parseHexColor(hex: String): Color {
+    val clean = hex.removePrefix("#")
+    return try {
+        val rgb = clean.toLong(16).toInt()
+        Color(0xFF000000.toInt() or rgb)
+    } catch (e: NumberFormatException) {
+        Color.Black
+    }
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -101,7 +117,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            val tokens = themeColors(true) // dark; light-mode toggle is a later feature
+            val colorScheme =
+                darkColorScheme(
+                    background = parseHexColor(tokens.bg),
+                    surface = parseHexColor(tokens.surface),
+                    onBackground = parseHexColor(tokens.text),
+                    onSurface = parseHexColor(tokens.text),
+                    primary = parseHexColor(tokens.accent),
+                    secondary = parseHexColor(tokens.favorite),
+                )
+            MaterialTheme(colorScheme = colorScheme) {
                 Scaffold { padding ->
                     Column(Modifier.padding(padding).padding(12.dp)) {
                         val detail = vm.selectedGame
