@@ -407,6 +407,19 @@ impl Engine {
         launch::run_blocking(&self.db, &plan, sink)
     }
 
+    /// Record a play session's start without spawning a process, for shells
+    /// that fire an Intent instead of owning a child process handle (the
+    /// Android shell, PLAN.md §4.5). Pair with [`Engine::end_play_session`]
+    /// once the shell detects the game returned control.
+    pub fn start_play_session(&mut self, game_id: i64) -> Result<i64> {
+        launch::start_session(&self.db, game_id)
+    }
+
+    /// Record a play session's end, returning its duration in seconds.
+    pub fn end_play_session(&mut self, session_id: i64) -> Result<i64> {
+        launch::end_session(&self.db, session_id)
+    }
+
     /// Health check used by `relic-cli doctor` and shells on startup.
     pub fn integrity_check(&self) -> Result<bool> {
         self.db.integrity_check()
@@ -673,6 +686,26 @@ mod tests {
         assert!(engine
             .add_launch_profile("noop", "snes", "{bogus}", 1)
             .is_err());
+    }
+
+    #[test]
+    fn start_and_end_play_session_without_spawning_a_process() {
+        let lib = fake_library();
+        let mut engine = Engine::open_in_memory().unwrap();
+        let id = engine.add_library(lib.path(), "test").unwrap();
+        engine.scan(id, &mut |_| {}).unwrap();
+        let game_id = engine.query_games(Some("snes"), None).unwrap()[0].id;
+
+        assert!(engine.recently_played(10).unwrap().is_empty());
+
+        let session_id = engine.start_play_session(game_id).unwrap();
+        assert!(session_id > 0);
+        let duration_s = engine.end_play_session(session_id).unwrap();
+        assert!(duration_s >= 0);
+
+        let recent = engine.recently_played(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].game_id, game_id);
     }
 
     #[test]

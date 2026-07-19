@@ -225,6 +225,19 @@ impl RelicEngine {
         guard.system_default_core(&slug)
     }
 
+    /// Record a play session's start without spawning a process — the
+    /// Android shell fires an Intent instead (PLAN.md §4.5,
+    /// `apps/android/.../IntentLauncher.kt`). Pair with `end_play_session`
+    /// once the shell detects the game returned control.
+    pub fn start_play_session(&self, game_id: i64) -> Result<i64, RelicError> {
+        self.with_engine(|e| e.start_play_session(game_id))
+    }
+
+    /// Record a play session's end, returning its duration in seconds.
+    pub fn end_play_session(&self, session_id: i64) -> Result<i64, RelicError> {
+        self.with_engine(|e| e.end_play_session(session_id))
+    }
+
     /// Boxart thumbnail path for a game, if one is cached — convenience for
     /// grid shells (avoids a media-row round trip per tile).
     pub fn boxart_path(&self, game_id: i64) -> Option<String> {
@@ -613,6 +626,12 @@ mod tests {
         assert_eq!(totals.total_seconds, 0);
         assert!(engine.recently_played(10).unwrap().is_empty());
         assert!(engine.most_played(10).unwrap().is_empty());
+
+        // Session bookkeeping without a spawned process (Android launch path).
+        let session_id = engine.start_play_session(games[0].id).unwrap();
+        let duration_s = engine.end_play_session(session_id).unwrap();
+        assert!(duration_s >= 0);
+        assert_eq!(engine.play_totals().unwrap().sessions, 1);
 
         // Gamelist export should succeed on the scanned library.
         assert!(engine.export_gamelists(lib).is_ok());

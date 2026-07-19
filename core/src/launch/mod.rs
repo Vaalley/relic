@@ -190,15 +190,41 @@ pub(crate) fn resolve(db: &Db, game_id: i64, systems: &[SystemDef]) -> Result<La
     })
 }
 
+/// Record a play session's start (`play_sessions.started_at`), returning its
+/// row id. Split out of [`run_blocking`] for shells that can't own a child
+/// process handle and so can't use `run_blocking` directly — the Android
+/// shell fires an Intent instead of spawning a process (PLAN.md §4.5) and
+/// pairs this with [`end_session`] once it detects the game returned control
+/// (`apps/android/.../IntentLauncher.kt`, docs/android-intents.md §5).
+pub(crate) fn start_session(db: &Db, game_id: i64) -> Result<i64> {
+    db.conn().execute(
+        "INSERT INTO play_sessions (game_id, started_at) VALUES (?1, unixepoch())",
+        [game_id],
+    )?;
+    Ok(db.conn().last_insert_rowid())
+}
+
+/// Record a play session's end (`ended_at`/`duration_s`) and return the
+/// computed duration in seconds.
+pub(crate) fn end_session(db: &Db, session_id: i64) -> Result<i64> {
+    db.conn().execute(
+        "UPDATE play_sessions
+         SET ended_at = unixepoch(), duration_s = unixepoch() - started_at
+         WHERE id = ?1",
+        [session_id],
+    )?;
+    Ok(db.conn().query_row(
+        "SELECT duration_s FROM play_sessions WHERE id = ?1",
+        [session_id],
+        |r| r.get(0),
+    )?)
+}
+
 /// Spawn the plan's process, record the play session, and block until the
 /// emulator exits. Desktop shells call this from a worker thread and shed
 /// their render surface while it runs (PLAN.md §4.5); the CLI just blocks.
 pub(crate) fn run_blocking(db: &Db, plan: &LaunchPlan, sink: &mut dyn FnMut(Event)) -> Result<i64> {
-    db.conn().execute(
-        "INSERT INTO play_sessions (game_id, started_at) VALUES (?1, unixepoch())",
-        [plan.game_id],
-    )?;
-    let session_id = db.conn().last_insert_rowid();
+    let session_id = start_session(db, plan.game_id)?;
     sink(Event::LaunchStarted {
         game_id: plan.game_id,
         session_id,
@@ -209,17 +235,7 @@ pub(crate) fn run_blocking(db: &Db, plan: &LaunchPlan, sink: &mut dyn FnMut(Even
         .spawn()
         .and_then(|mut child| child.wait());
 
-    db.conn().execute(
-        "UPDATE play_sessions
-         SET ended_at = unixepoch(), duration_s = unixepoch() - started_at
-         WHERE id = ?1",
-        [session_id],
-    )?;
-    let duration_s: i64 = db.conn().query_row(
-        "SELECT duration_s FROM play_sessions WHERE id = ?1",
-        [session_id],
-        |r| r.get(0),
-    )?;
+    let duration_s = end_session(db, session_id)?;
     sink(Event::LaunchEnded {
         game_id: plan.game_id,
         session_id,
