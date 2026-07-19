@@ -1,7 +1,7 @@
 // Relic desktop shell — Phase 2 system/game browser skeleton (ADR-002, Slint).
 // Real data from relic-core via Engine, wired up in src/main.rs. Still missing
-// from PLAN.md Phase 2 scope: detail page, first-run wizard, gamepad input.
-// Colors come from the `Palette` global, populated in main.rs via
+// from PLAN.md Phase 2 scope: first-run wizard (emulator auto-detect), gamepad
+// input. Colors come from the `Palette` global, populated in main.rs via
 // relic-themes' resolved default theme (PLAN.md section 6 layer 1).
 
 import { Button, LineEdit, ListView, StandardListView } from "std-widgets.slint";
@@ -58,6 +58,12 @@ export component MainWindow inherits Window {
     in property <string> stats-summary;
     in property <bool> show-scraper: false;
     in property <[PendingMatchRow]> pending-matches-model;
+    in property <bool> show-detail: false;
+    in property <int> detail-game-id;
+    in property <string> detail-name;
+    in property <string> detail-system;
+    in property <string> detail-path;
+    in property <bool> detail-favorite;
 
     callback system-selected(int);
     callback search-edited(string);
@@ -69,6 +75,10 @@ export component MainWindow inherits Window {
     callback stats-toggled();
     callback scraper-toggled();
     callback match-confirmed(int, string);
+    callback game-info-requested(int);
+    callback detail-play-requested();
+    callback detail-favorite-toggled();
+    callback detail-back-requested();
 
     VerticalLayout {
         padding: 12px;
@@ -107,7 +117,7 @@ export component MainWindow inherits Window {
             }
         }
 
-        if !show-stats && !show-scraper : HorizontalLayout {
+        if !show-stats && !show-scraper && !show-detail : HorizontalLayout {
             spacing: 12px;
 
             VerticalLayout {
@@ -192,6 +202,9 @@ export component MainWindow inherits Window {
                         height: 26px;
 
                         row-area := TouchArea {
+                            clicked => {
+                                game-info-requested(game.id);
+                            }
                             double-clicked => {
                                 game-launch-requested(game.id);
                             }
@@ -337,6 +350,55 @@ export component MainWindow inherits Window {
                                 match-confirmed(row.game-id, row.provider-id);
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        if show-detail : VerticalLayout {
+            spacing: 8px;
+
+            Text {
+                text: detail-name;
+                font-size: 22px;
+                font-weight: 700;
+                color: Palette.text;
+            }
+
+            Text {
+                text: detail-system;
+                font-size: 14px;
+                color: Palette.text-dim;
+            }
+
+            Text {
+                text: detail-path;
+                font-size: 11px;
+                color: Palette.text-dim;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                spacing: 8px;
+
+                Button {
+                    text: "▶ Play";
+                    clicked => {
+                        detail-play-requested();
+                    }
+                }
+
+                Button {
+                    text: detail-favorite ? "★ Unfavorite" : "☆ Favorite";
+                    clicked => {
+                        detail-favorite-toggled();
+                    }
+                }
+
+                Button {
+                    text: "Back";
+                    clicked => {
+                        detail-back-requested();
                     }
                 }
             }

@@ -98,6 +98,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let current_games: Rc<RefCell<Vec<GameRow>>> = Rc::new(RefCell::new(Vec::new()));
     let show_stats: Rc<Cell<bool>> = Rc::new(Cell::new(false));
     let show_scraper: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    let show_detail: Rc<Cell<bool>> = Rc::new(Cell::new(false));
 
     let refresh_games = {
         let window_weak = window.as_weak();
@@ -337,6 +338,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let engine = Rc::clone(&engine);
         let show_stats = Rc::clone(&show_stats);
         let show_scraper = Rc::clone(&show_scraper);
+        let show_detail = Rc::clone(&show_detail);
         move || {
             let Some(window) = window_weak.upgrade() else {
                 return;
@@ -347,6 +349,8 @@ fn main() -> Result<(), slint::PlatformError> {
             if new_value {
                 show_scraper.set(false);
                 window.set_show_scraper(false);
+                show_detail.set(false);
+                window.set_show_detail(false);
             } else {
                 return;
             }
@@ -425,6 +429,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let window_weak = window.as_weak();
         let show_stats = Rc::clone(&show_stats);
         let show_scraper = Rc::clone(&show_scraper);
+        let show_detail = Rc::clone(&show_detail);
         let refresh_pending_matches = refresh_pending_matches.clone();
         move || {
             let Some(window) = window_weak.upgrade() else {
@@ -436,6 +441,8 @@ fn main() -> Result<(), slint::PlatformError> {
             if new_value {
                 show_stats.set(false);
                 window.set_show_stats(false);
+                show_detail.set(false);
+                window.set_show_detail(false);
                 refresh_pending_matches();
             }
         }
@@ -449,6 +456,102 @@ fn main() -> Result<(), slint::PlatformError> {
             let _ = relic_scraper::confirm_match(&conn, game_id as i64, provider_id.as_str());
             drop(conn);
             refresh_pending_matches();
+        }
+    });
+
+    let show_detail_for = |window: &MainWindow, game: &GameRow| {
+        window.set_detail_game_id(game.id as i32);
+        window.set_detail_name(game.name.clone().into());
+        window.set_detail_system(game.system_slug.clone().into());
+        window.set_detail_path(game.rel_path.clone().unwrap_or_default().into());
+        window.set_detail_favorite(game.favorite);
+    };
+
+    window.on_game_info_requested({
+        let window_weak = window.as_weak();
+        let current_games = Rc::clone(&current_games);
+        let show_stats = Rc::clone(&show_stats);
+        let show_scraper = Rc::clone(&show_scraper);
+        let show_detail = Rc::clone(&show_detail);
+        move |id| {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let games = current_games.borrow();
+            let Some(game) = games.iter().find(|g| g.id as i32 == id) else {
+                return;
+            };
+            show_detail_for(&window, game);
+            drop(games);
+            show_stats.set(false);
+            window.set_show_stats(false);
+            show_scraper.set(false);
+            window.set_show_scraper(false);
+            show_detail.set(true);
+            window.set_show_detail(true);
+        }
+    });
+
+    window.on_detail_play_requested({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let id = window.get_detail_game_id();
+            let mut events = Vec::new();
+            let result = engine
+                .borrow_mut()
+                .launch(id as i64, &mut |e| events.push(e));
+            let message = match result {
+                Ok(_) => {
+                    let duration = events.iter().find_map(|e| match e {
+                        Event::LaunchEnded { duration_s, .. } => Some(*duration_s),
+                        _ => None,
+                    });
+                    match duration {
+                        Some(d) => format!("Played for {d}s"),
+                        None => "Launched".to_string(),
+                    }
+                }
+                Err(e) => format!("Launch failed: {e}"),
+            };
+            window.set_status_line(message.into());
+        }
+    });
+
+    window.on_detail_favorite_toggled({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let refresh_games = refresh_games.clone();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let id = window.get_detail_game_id();
+            let new_favorite = !window.get_detail_favorite();
+            if engine
+                .borrow_mut()
+                .set_favorite(id as i64, new_favorite)
+                .is_ok()
+            {
+                window.set_detail_favorite(new_favorite);
+                let search = window.get_search_text();
+                refresh_games(search.as_str());
+            }
+        }
+    });
+
+    window.on_detail_back_requested({
+        let window_weak = window.as_weak();
+        let show_detail = Rc::clone(&show_detail);
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            show_detail.set(false);
+            window.set_show_detail(false);
         }
     });
 
