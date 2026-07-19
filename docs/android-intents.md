@@ -2,13 +2,18 @@
 
 > Companion to `PLAN.md` §4.5 and `apps/android/README.md`. Spec for the
 > per-emulator intent templates the Android shell uses to launch games.
-> Status: **Draft, Phase 3** — authoritative once the Android shell's intent
-> resolver ships in Phase 3. The templates under `core/data/intents/` are now
-> parsed and validated at build time by `relic-core::intents` (embedded via
-> `include_str!`, same pattern as `core/data/systems/`) and checkable with
-> `relic-cli intent-validate`, but no shell yet *fires* an `Intent` from them
-> — `apps/android` still hardcodes RetroArch (`RetroArchLauncher.kt`). Fields
-> may move or rename until the resolver lands.
+> Status: **Implemented, Phase 3.** The templates under `core/data/intents/`
+> are parsed and validated at build time by `relic-core::intents` (embedded
+> via `include_str!`, same pattern as `core/data/systems/`) and checkable
+> with `relic-cli intent-validate`. `relic_core::intents::resolve` merges a
+> template's `per_system` override and substitutes placeholders; UniFFI
+> exposes this as `intentTemplatesForSystem`/`resolveIntent`, and
+> `apps/android`'s `IntentLauncher.kt` builds and fires the resulting
+> `Intent` — RetroArch and every standalone in the built-in set now launch
+> through the same data-driven path, not a hardcoded one. Still ahead: real
+> SAF content-URI grants (today's ROM URI comes from a `FileProvider` over
+> all-files access, per `apps/android/README.md` "Alpha shortcuts") and
+> revocation on session end (§5 step 10).
 
 ---
 
@@ -157,7 +162,7 @@ substituted by the shell at launch time. No other field accepts placeholders.
 |---|---|---|
 | `{rom_uri}` | The `content://` URI Relic has granted for the ROM file, via SAF. This is the same URI passed to `Intent.data` when `data_mode = "data"`. | Always. |
 | `{rom_path}` | The ROM's path relative to its library root, as Relic stores it in `files.rel_path`. Useful for emulators that key state off filename rather than URI. | Always. |
-| `{core}` | The libretro core for the system being launched, taken from the system registry's `default_core` field (`core/data/systems/*.toml`). **RetroArch only** — other emulators are not libretro and have no core; referencing `{core}` in a non-RetroArch template is a validation error. Resolves to the **full path** to the core `.so` (e.g. `/data/data/<pkg>/cores/mesen_libretro_android.so`), not just the filename stem — RetroArch AArch64 nightlies ≥ 2025-01-17 reject a bare stem (`docs/android-standalone-emulators.md` §2.1, `libretro/RetroArch#17433`). The alpha hardcoded launcher (`apps/android/.../RetroArchLauncher.kt`) already does this; the future data-driven resolver must match it. | RetroArch templates only. |
+| `{core}` | The libretro core for the system being launched, taken from the system registry's `default_core` field (`core/data/systems/*.toml`). **Libretro-frontend templates only** (`retroarch`, `retroarch_aarch64`) — other emulators are not libretro and have no core; referencing `{core}` elsewhere is a validation error. Resolves to the **full path** to the core `.so` (e.g. `/data/data/<pkg>/cores/mesen_libretro_android.so`), not just the filename stem — RetroArch AArch64 nightlies ≥ 2025-01-17 reject a bare stem (`docs/android-standalone-emulators.md` §2.1, `libretro/RetroArch#17433`). `relic_core::intents::resolve` only substitutes whatever full-path string the caller passes as `core` — building that path from the package + core stem is `IntentLauncher.kt`'s job. | Libretro-frontend templates only. |
 
 Unknown placeholders fail validation. Literal braces in a value are written
 `{{` and `}}` (standard TOML has no escape for this; the resolver treats `{{`
@@ -340,11 +345,12 @@ upstream rename:
    emulator genuinely cannot function without write access to the ROM, open an
    issue first — that's a format extension, not a template edit.
 6. **Test.** Run `relic-cli intent-validate core/data/intents/<id>.toml` (or
-   `intent-validate` with no path to check every built-in template). The
-   resolver that fires a real `Intent` from a template is still ahead
-   (`apps/android` hardcodes RetroArch today), so a device launch isn't yet
-   possible through Relic itself for other emulators — until then, manual
-   `adb am start` against the resolved component is the best available check.
+   `intent-validate` with no path to check every built-in template), then
+   install the app and a game for the new template's system — `IntentLauncher`
+   tries every candidate template for a system in `BUILTIN` order and fires
+   whichever package is installed, so a validated template is live immediately,
+   no code change needed. `adb am start` against the resolved component is
+   still useful for isolating a launch failure from the rest of the app.
 7. **Document per-system quirks in `per_system`.** If the emulator needs a
    different activity or extra set for one system, put it in `per_system`
    rather than forking the template.

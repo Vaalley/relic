@@ -541,7 +541,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         val rom = File(vm.libraryPath, relPath).absolutePath
-        val error = RetroArchLauncher.launch(this, rom, vm.defaultCore(systemSlug))
+        val error = IntentLauncher.launch(this, systemSlug, rom, relPath, vm.defaultCore(systemSlug))
         if (error != null) vm.status = error
     }
 }

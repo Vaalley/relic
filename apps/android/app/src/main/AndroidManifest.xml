@@ -43,5 +43,19 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <!-- Mints a single-file content:// URI to hand one ROM to an
+             external emulator (docs/android-intents.md §5 step 8), scoped by
+             FLAG_GRANT_READ_URI_PERMISSION to that one file — not exported,
+             not a broader grant of Relic's library. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 </manifest>

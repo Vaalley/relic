@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider path set for minting a single-file content:// URI to hand a
+     ROM to an external emulator (docs/android-intents.md §5 step 8). A
+     root-path covers any absolute filesystem path (primary storage or an SD
+     card, per MainActivity.treeUriToPath) since Relic's alpha storage model
+     already has all-files access to whatever the user picked. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <root-path name="root" path="." />
+</paths>
