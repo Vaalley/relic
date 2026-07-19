@@ -49,3 +49,18 @@ jobs:
       # online modules compiled in.
       - name: cargo build (offline-only)
         run: cargo build -p relic-core --no-default-features
+
+  size-budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Binary-size budgets (PLAN.md §8): relic-capi cdylib < 4 MB,
+      # relic-desktop binary < 20 MB.
+      - name: size budgets
+        run: ./tools/size-check/run.ps1
+        shell: pwsh
