@@ -5,8 +5,10 @@
 //! (`<root>/<slug>/...`, folder names matched case-insensitively). Archive-aware: a `.zip` whose system has real ROM
 //! extensions (see `archive::should_enumerate`) is enumerated without
 //! extraction and can expand into one game per inner entry (`archive.rs`).
-//! Still to come per the plan: background thread pool, multi-disc grouping,
-//! FS watching.
+//! Multi-disc sets collapse via `.m3u`: a playlist's referenced discs are
+//! excluded from indexing as their own games, so only the `.m3u` itself
+//! becomes a game (`m3u_disc_paths`).
+//! Still to come per the plan: background thread pool, FS watching.
 
 pub mod archive;
 pub mod hash;
@@ -165,6 +167,15 @@ pub fn scan_library(
                 });
             }
         }
+    }
+
+    // Discs referenced by a `.m3u` playlist are indexed as part of that one
+    // game, not as games of their own — drop them from `items` before the
+    // main pass so incremental scanning (added/removed/unchanged) and
+    // display naming never see them separately.
+    let excluded = m3u_disc_paths(&items);
+    if !excluded.is_empty() {
+        items.retain(|item| item.in_archive.is_some() || !excluded.contains(&canon(&item.path)));
     }
 
     if !matched_any {
@@ -328,6 +339,48 @@ pub fn scan_library(
         unchanged: summary.unchanged,
     });
     Ok(summary)
+}
+
+/// Best-effort path normalization so an `.m3u` line and the disc file it
+/// names compare equal despite case or separator differences; falls back to
+/// the path as-is if the file can't be resolved (e.g. already excluded).
+fn canon(p: &Path) -> std::path::PathBuf {
+    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf())
+}
+
+/// Every on-disk path referenced by an `.m3u` playlist among `items`, one
+/// line per disc (blank lines and `#`-comments skipped), resolved relative
+/// to the playlist's own directory — the convention every emulator that
+/// reads `.m3u` follows.
+fn m3u_disc_paths(items: &[Item]) -> HashSet<std::path::PathBuf> {
+    let mut excluded = HashSet::new();
+    for item in items {
+        if item.in_archive.is_some() {
+            continue;
+        }
+        let is_m3u = item
+            .path
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("m3u"));
+        if !is_m3u {
+            continue;
+        }
+        let Ok(contents) = std::fs::read_to_string(&item.path) else {
+            continue;
+        };
+        let Some(parent) = item.path.parent() else {
+            continue;
+        };
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            excluded.insert(canon(&parent.join(line.replace('\\', "/"))));
+        }
+    }
+    excluded
 }
 
 fn system_db_id(conn: &rusqlite::Connection, slug: &str) -> Result<i64> {
@@ -657,6 +710,61 @@ mod tests {
         assert_eq!(second.added, 0);
         assert_eq!(second.unchanged, 3);
         assert_eq!(second.removed, 0);
+    }
+
+    /// psx-like: cue and m3u are both plain (non-archive) real extensions.
+    fn psx_system() -> SystemDef {
+        SystemDef {
+            slug: "psx".into(),
+            name: "PlayStation".into(),
+            sort_order: 0,
+            extensions: vec!["cue".into(), "m3u".into()],
+            ra_console_id: None,
+            default_core: None,
+            theme_key: None,
+        }
+    }
+
+    #[test]
+    fn m3u_playlist_collapses_discs_into_one_game() {
+        let dir = tempfile::tempdir().unwrap();
+        let psx_dir = dir.path().join("psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+        fs::write(psx_dir.join("Some Game (Disc 1).cue"), b"cue1").unwrap();
+        fs::write(psx_dir.join("Some Game (Disc 2).cue"), b"cue2").unwrap();
+        fs::write(
+            psx_dir.join("Some Game.m3u"),
+            "Some Game (Disc 1).cue\nSome Game (Disc 2).cue\n",
+        )
+        .unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let defs = vec![psx_system()];
+        let library_id = seed_library(&mut db, dir.path(), &defs);
+
+        let summary = scan_library(&mut db, library_id, dir.path(), &defs, &mut |_| {}).unwrap();
+        assert_eq!(summary.added, 1);
+
+        let rows = indexed_rows(&db, library_id);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "psx/Some Game.m3u");
+        assert_eq!(rows[0].2, "Some Game");
+    }
+
+    #[test]
+    fn discs_without_an_m3u_stay_separate_games() {
+        let dir = tempfile::tempdir().unwrap();
+        let psx_dir = dir.path().join("psx");
+        fs::create_dir_all(&psx_dir).unwrap();
+        fs::write(psx_dir.join("Solo Game (Disc 1).cue"), b"cue1").unwrap();
+        fs::write(psx_dir.join("Solo Game (Disc 2).cue"), b"cue2").unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let defs = vec![psx_system()];
+        let library_id = seed_library(&mut db, dir.path(), &defs);
+
+        let summary = scan_library(&mut db, library_id, dir.path(), &defs, &mut |_| {}).unwrap();
+        assert_eq!(summary.added, 2);
     }
 
     #[test]
