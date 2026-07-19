@@ -225,6 +225,17 @@ impl RelicEngine {
         guard.system_default_core(&slug)
     }
 
+    /// Get an arbitrary shell-level setting (e.g. a chosen theme directory).
+    /// `None` if unset.
+    pub fn get_setting(&self, key: String) -> Result<Option<String>, RelicError> {
+        self.with_engine(|e| e.get_setting(&key))
+    }
+
+    /// Set (or overwrite) an arbitrary shell-level setting.
+    pub fn set_setting(&self, key: String, value: String) -> Result<(), RelicError> {
+        self.with_engine(|e| e.set_setting(&key, &value))
+    }
+
     /// Record a play session's start without spawning a process — the
     /// Android shell fires an Intent instead (PLAN.md §4.5,
     /// `apps/android/.../IntentLauncher.kt`). Pair with `end_play_session`
@@ -702,6 +713,16 @@ accent = "#00ff00"
         let duration_s = engine.end_play_session(session_id).unwrap();
         assert!(duration_s >= 0);
         assert_eq!(engine.play_totals().unwrap().sessions, 1);
+
+        // Shell-level settings (e.g. a chosen theme directory).
+        assert_eq!(engine.get_setting("theme_dir".into()).unwrap(), None);
+        engine
+            .set_setting("theme_dir".into(), "/roms/themes/mine".into())
+            .unwrap();
+        assert_eq!(
+            engine.get_setting("theme_dir".into()).unwrap(),
+            Some("/roms/themes/mine".to_string())
+        );
 
         // Gamelist export should succeed on the scanned library.
         assert!(engine.export_gamelists(lib).is_ok());
