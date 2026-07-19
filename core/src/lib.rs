@@ -4,18 +4,20 @@
 //! outside this crate touches SQLite or the filesystem index directly.
 //!
 //! Layering (see PLAN.md §4):
-//! - `db`       schema, migrations, connection handling
-//! - `systems`  platform registry loaded from `data/systems/*.toml`
-//! - `scan`     filesystem crawl → index pipeline
-//! - `metadata` gamelist.xml / DAT parsing and matching (Phase 1)
-//! - `media`    thumbnail cache (Phase 1)
-//! - `intents`  Android intent-template registry + validator (Phase 3)
-//! - `launch`   emulator profiles and argument templating (Phase 1)
-//! - `events`   delta events streamed to shells
-//! - `stats`    playtime aggregation: recently/most played, totals (Phase 1)
-//! - `api`      the single public facade exposed over FFI
+//! - `db`          schema, migrations, connection handling
+//! - `systems`     platform registry loaded from `data/systems/*.toml`
+//! - `scan`        filesystem crawl → index pipeline
+//! - `metadata`    gamelist.xml / DAT parsing and matching (Phase 1)
+//! - `media`       thumbnail cache (Phase 1)
+//! - `collections` smart-collection predicate encoding (Phase 4)
+//! - `intents`     Android intent-template registry + validator (Phase 3)
+//! - `launch`      emulator profiles and argument templating (Phase 1)
+//! - `events`      delta events streamed to shells
+//! - `stats`       playtime aggregation: recently/most played, totals (Phase 1)
+//! - `api`         the single public facade exposed over FFI
 
 pub mod api;
+pub mod collections;
 pub mod db;
 pub mod events;
 pub mod intents;

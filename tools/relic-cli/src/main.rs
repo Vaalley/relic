@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use clap::{Parser, Subcommand};
 
 use relic_core::api::Engine;
+use relic_core::collections::SmartQuery;
 use relic_core::events::Event;
 use relic_core::intents;
 use relic_core::stats::GameStats;
@@ -141,6 +142,55 @@ enum Command {
         #[arg(long, default_value = "relic.db")]
         db: PathBuf,
     },
+    /// Create an empty manual collection.
+    CollectionAdd {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        name: String,
+    },
+    /// Create a smart collection (membership computed live from filters).
+    CollectionAddSmart {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        name: String,
+        #[arg(long)]
+        system: Option<String>,
+        #[arg(long)]
+        search: Option<String>,
+        #[arg(long)]
+        favorite: Option<bool>,
+    },
+    /// List collections.
+    Collections {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+    },
+    /// List a collection's member games.
+    CollectionGames {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        collection_id: i64,
+    },
+    /// Add a game to a manual collection.
+    CollectionAddGame {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        collection_id: i64,
+        game_id: i64,
+    },
+    /// Remove a game from a manual collection.
+    CollectionRemoveGame {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        collection_id: i64,
+        game_id: i64,
+    },
+    /// Delete a collection (manual or smart).
+    CollectionDelete {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        collection_id: i64,
+    },
     /// List the built-in Android intent templates (core/data/intents/).
     Intents,
     /// Validate Android intent template(s) against docs/android-intents.md §6.
@@ -189,6 +239,29 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::Recent { db, limit } => cmd_recent(&db, limit),
         Command::MostPlayed { db, limit } => cmd_most_played(&db, limit),
         Command::Stats { db } => cmd_stats(&db),
+        Command::CollectionAdd { db, name } => cmd_collection_add(&db, &name),
+        Command::CollectionAddSmart {
+            db,
+            name,
+            system,
+            search,
+            favorite,
+        } => cmd_collection_add_smart(&db, &name, system, search, favorite),
+        Command::Collections { db } => cmd_collections(&db),
+        Command::CollectionGames { db, collection_id } => cmd_collection_games(&db, collection_id),
+        Command::CollectionAddGame {
+            db,
+            collection_id,
+            game_id,
+        } => cmd_collection_add_game(&db, collection_id, game_id),
+        Command::CollectionRemoveGame {
+            db,
+            collection_id,
+            game_id,
+        } => cmd_collection_remove_game(&db, collection_id, game_id),
+        Command::CollectionDelete { db, collection_id } => {
+            cmd_collection_delete(&db, collection_id)
+        }
         Command::Intents => cmd_intents(),
         Command::IntentValidate { path } => cmd_intent_validate(path.as_deref()),
     }
@@ -262,6 +335,77 @@ fn cmd_export_gamelists(db: &Path, root: &Path) -> Result<(), Box<dyn Error>> {
     let library_id = engine.add_library(root, &name)?;
     let written = engine.export_gamelists(library_id)?;
     println!("wrote {written} gamelist.xml file(s)");
+    Ok(())
+}
+
+fn cmd_collection_add(db: &Path, name: &str) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    let id = engine.create_manual_collection(name)?;
+    println!("created manual collection #{id} '{name}'");
+    Ok(())
+}
+
+fn cmd_collection_add_smart(
+    db: &Path,
+    name: &str,
+    system: Option<String>,
+    search: Option<String>,
+    favorite: Option<bool>,
+) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    let query = SmartQuery {
+        system,
+        search,
+        favorite,
+    };
+    let id = engine.create_smart_collection(name, &query)?;
+    println!("created smart collection #{id} '{name}'");
+    Ok(())
+}
+
+fn cmd_collections(db: &Path) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    for c in engine.list_collections()? {
+        println!("#{:<5} {:<8} {}", c.id, c.kind, c.name);
+    }
+    Ok(())
+}
+
+fn cmd_collection_games(db: &Path, collection_id: i64) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    for g in engine.collection_games(collection_id)? {
+        let star = if g.favorite { '*' } else { ' ' };
+        println!("[{star}] #{:<5} {} ({})", g.id, g.name, g.system_slug);
+    }
+    Ok(())
+}
+
+fn cmd_collection_add_game(
+    db: &Path,
+    collection_id: i64,
+    game_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    engine.add_to_collection(collection_id, game_id)?;
+    println!("added game #{game_id} to collection #{collection_id}");
+    Ok(())
+}
+
+fn cmd_collection_remove_game(
+    db: &Path,
+    collection_id: i64,
+    game_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    engine.remove_from_collection(collection_id, game_id)?;
+    println!("removed game #{game_id} from collection #{collection_id}");
+    Ok(())
+}
+
+fn cmd_collection_delete(db: &Path, collection_id: i64) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::open(db)?;
+    engine.delete_collection(collection_id)?;
+    println!("deleted collection #{collection_id}");
     Ok(())
 }
 

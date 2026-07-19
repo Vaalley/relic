@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::collections::SmartQuery;
 use crate::db::Db;
 use crate::events::Event;
 use crate::launch::{self, EmulatorRow, LaunchPlan, ProfileRow};
@@ -34,6 +35,16 @@ pub struct GameRow {
     pub name: String,
     pub favorite: bool,
     pub rel_path: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CollectionRow {
+    pub id: i64,
+    pub name: String,
+    /// `"manual"` or `"smart"` (matches the `collections.kind` column).
+    pub kind: String,
+    /// `Some` only for smart collections; see [`SmartQuery`].
+    pub smart_query: Option<String>,
 }
 
 impl Engine {
@@ -399,6 +410,164 @@ impl Engine {
     pub fn play_totals(&self) -> Result<(i64, i64)> {
         crate::stats::totals(&self.db)
     }
+
+    /// Create an empty manual collection (games added via `add_to_collection`).
+    pub fn create_manual_collection(&mut self, name: &str) -> Result<i64> {
+        self.db.conn().execute(
+            "INSERT INTO collections (name, kind) VALUES (?1, 'manual')",
+            [name],
+        )?;
+        Ok(self.db.conn().last_insert_rowid())
+    }
+
+    /// Create a smart collection: its membership is computed on read from
+    /// `query`, not stored per-game.
+    pub fn create_smart_collection(&mut self, name: &str, query: &SmartQuery) -> Result<i64> {
+        self.db.conn().execute(
+            "INSERT INTO collections (name, kind, smart_query) VALUES (?1, 'smart', ?2)",
+            rusqlite::params![name, query.encode()],
+        )?;
+        Ok(self.db.conn().last_insert_rowid())
+    }
+
+    pub fn list_collections(&self) -> Result<Vec<CollectionRow>> {
+        let mut stmt = self
+            .db
+            .conn()
+            .prepare("SELECT id, name, kind, smart_query FROM collections ORDER BY name")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(CollectionRow {
+                    id: r.get(0)?,
+                    name: r.get(1)?,
+                    kind: r.get(2)?,
+                    smart_query: r.get(3)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub fn delete_collection(&mut self, collection_id: i64) -> Result<()> {
+        let changed = self
+            .db
+            .conn()
+            .execute("DELETE FROM collections WHERE id=?1", [collection_id])?;
+        if changed == 0 {
+            return Err(crate::Error::CollectionNotFound(collection_id));
+        }
+        Ok(())
+    }
+
+    /// Add a game to a manual collection (errors on a smart one — its
+    /// membership is computed from `smart_query`, not stored).
+    pub fn add_to_collection(&mut self, collection_id: i64, game_id: i64) -> Result<()> {
+        self.require_manual_collection(collection_id)?;
+        let position: i64 = self.db.conn().query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM collection_games WHERE collection_id=?1",
+            [collection_id],
+            |r| r.get(0),
+        )?;
+        self.db.conn().execute(
+            "INSERT INTO collection_games (collection_id, game_id, position) VALUES (?1, ?2, ?3)
+             ON CONFLICT(collection_id, game_id) DO NOTHING",
+            rusqlite::params![collection_id, game_id, position],
+        )?;
+        Ok(())
+    }
+
+    pub fn remove_from_collection(&mut self, collection_id: i64, game_id: i64) -> Result<()> {
+        self.require_manual_collection(collection_id)?;
+        self.db.conn().execute(
+            "DELETE FROM collection_games WHERE collection_id=?1 AND game_id=?2",
+            rusqlite::params![collection_id, game_id],
+        )?;
+        Ok(())
+    }
+
+    fn require_manual_collection(&self, collection_id: i64) -> Result<()> {
+        let kind: String = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT kind FROM collections WHERE id=?1",
+                [collection_id],
+                |r| r.get(0),
+            )
+            .map_err(|_| crate::Error::CollectionNotFound(collection_id))?;
+        if kind != "manual" {
+            return Err(crate::Error::NotManualCollection(collection_id));
+        }
+        Ok(())
+    }
+
+    /// Resolve a collection's member games: stored membership (in position
+    /// order) for a manual collection, or a live evaluation of its
+    /// `SmartQuery` for a smart one.
+    pub fn collection_games(&self, collection_id: i64) -> Result<Vec<GameRow>> {
+        let (kind, smart_query): (String, Option<String>) = self
+            .db
+            .conn()
+            .query_row(
+                "SELECT kind, smart_query FROM collections WHERE id=?1",
+                [collection_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| crate::Error::CollectionNotFound(collection_id))?;
+
+        if kind == "manual" {
+            let mut stmt = self.db.conn().prepare(
+                "SELECT g.id, s.slug,
+                        COALESCE(u.custom_name, g.canonical_name),
+                        COALESCE(u.favorite, 0),
+                        (SELECT rel_path FROM files f WHERE f.game_id = g.id LIMIT 1)
+                 FROM collection_games cg
+                 JOIN games g ON g.id = cg.game_id
+                 JOIN systems s ON s.id = g.system_id
+                 LEFT JOIN user_data u ON u.game_id = g.id
+                 WHERE cg.collection_id = ?1
+                 ORDER BY cg.position",
+            )?;
+            let rows = stmt
+                .query_map([collection_id], Self::map_game_row)?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            return Ok(rows);
+        }
+
+        let query = SmartQuery::parse(smart_query.as_deref().unwrap_or(""));
+        let mut stmt = self.db.conn().prepare(
+            "SELECT g.id, s.slug,
+                    COALESCE(u.custom_name, g.canonical_name),
+                    COALESCE(u.favorite, 0),
+                    (SELECT rel_path FROM files f WHERE f.game_id = g.id LIMIT 1)
+             FROM games g
+             JOIN systems s ON s.id = g.system_id
+             LEFT JOIN user_data u ON u.game_id = g.id
+             WHERE COALESCE(u.hidden, 0) = 0
+               AND (?1 IS NULL OR s.slug = ?1)
+               AND (?2 IS NULL OR g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?2))
+               AND (?3 IS NULL OR COALESCE(u.favorite, 0) = ?3)
+             ORDER BY g.sort_name",
+        )?;
+        let favorite_filter = query.favorite.map(|f| f as i64);
+        let rows = stmt
+            .query_map(
+                rusqlite::params![query.system, query.search, favorite_filter],
+                Self::map_game_row,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    fn map_game_row(r: &rusqlite::Row) -> rusqlite::Result<GameRow> {
+        Ok(GameRow {
+            id: r.get(0)?,
+            system_slug: r.get(1)?,
+            name: r.get(2)?,
+            favorite: r.get::<_, i64>(3)? != 0,
+            rel_path: r.get(4)?,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -500,5 +669,93 @@ mod tests {
         engine.set_favorite(hits[0].id, true).unwrap();
         let again = engine.query_games(None, Some("zelda")).unwrap();
         assert!(again[0].favorite);
+    }
+
+    #[test]
+    fn manual_collection_add_remove_and_ordering() {
+        let lib = fake_library();
+        let mut engine = Engine::open_in_memory().unwrap();
+        let id = engine.add_library(lib.path(), "test").unwrap();
+        engine.scan(id, &mut |_| {}).unwrap();
+        let games = engine.query_games(Some("snes"), None).unwrap();
+        let (zelda, mario) = (games[0].id, games[1].id);
+
+        let collection_id = engine.create_manual_collection("Faves").unwrap();
+        assert!(engine.collection_games(collection_id).unwrap().is_empty());
+
+        engine.add_to_collection(collection_id, mario).unwrap();
+        engine.add_to_collection(collection_id, zelda).unwrap();
+        let members = engine.collection_games(collection_id).unwrap();
+        assert_eq!(
+            members.iter().map(|g| g.id).collect::<Vec<_>>(),
+            vec![mario, zelda]
+        );
+
+        engine.remove_from_collection(collection_id, mario).unwrap();
+        let members = engine.collection_games(collection_id).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].id, zelda);
+
+        let collections = engine.list_collections().unwrap();
+        assert_eq!(collections.len(), 1);
+        assert_eq!(collections[0].kind, "manual");
+
+        engine.delete_collection(collection_id).unwrap();
+        assert!(engine.list_collections().unwrap().is_empty());
+    }
+
+    #[test]
+    fn smart_collection_evaluates_favorite_filter_live() {
+        let lib = fake_library();
+        let mut engine = Engine::open_in_memory().unwrap();
+        let id = engine.add_library(lib.path(), "test").unwrap();
+        engine.scan(id, &mut |_| {}).unwrap();
+        let games = engine.query_games(Some("snes"), None).unwrap();
+        let zelda = games[0].id;
+
+        let query = crate::collections::SmartQuery {
+            system: Some("snes".into()),
+            search: None,
+            favorite: Some(true),
+        };
+        let collection_id = engine.create_smart_collection("Favorites", &query).unwrap();
+        assert!(engine.collection_games(collection_id).unwrap().is_empty());
+
+        // Smart membership is computed live, not stored — favoriting a game
+        // after creating the collection is enough to make it a member.
+        engine.set_favorite(zelda, true).unwrap();
+        let members = engine.collection_games(collection_id).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(members[0].id, zelda);
+    }
+
+    #[test]
+    fn games_cannot_be_added_to_a_smart_collection() {
+        let lib = fake_library();
+        let mut engine = Engine::open_in_memory().unwrap();
+        let id = engine.add_library(lib.path(), "test").unwrap();
+        engine.scan(id, &mut |_| {}).unwrap();
+        let game_id = engine.query_games(Some("snes"), None).unwrap()[0].id;
+
+        let collection_id = engine
+            .create_smart_collection("All favorites", &crate::collections::SmartQuery::default())
+            .unwrap();
+        assert!(matches!(
+            engine.add_to_collection(collection_id, game_id),
+            Err(crate::Error::NotManualCollection(_))
+        ));
+    }
+
+    #[test]
+    fn missing_collection_id_errors() {
+        let mut engine = Engine::open_in_memory().unwrap();
+        assert!(matches!(
+            engine.collection_games(999),
+            Err(crate::Error::CollectionNotFound(999))
+        ));
+        assert!(matches!(
+            engine.delete_collection(999),
+            Err(crate::Error::CollectionNotFound(999))
+        ));
     }
 }

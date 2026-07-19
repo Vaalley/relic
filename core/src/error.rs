@@ -42,4 +42,10 @@ pub enum Error {
 
     #[error("failed to launch '{exec}': {reason}")]
     LaunchFailed { exec: String, reason: String },
+
+    #[error("collection not found: id {0}")]
+    CollectionNotFound(i64),
+
+    #[error("collection {0} is a smart collection; games can't be added or removed directly")]
+    NotManualCollection(i64),
 }
