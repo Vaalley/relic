@@ -10,10 +10,13 @@
 > exposes this as `intentTemplatesForSystem`/`resolveIntent`, and
 > `apps/android`'s `IntentLauncher.kt` builds and fires the resulting
 > `Intent` — RetroArch and every standalone in the built-in set now launch
-> through the same data-driven path, not a hardcoded one. Still ahead: real
-> SAF content-URI grants (today's ROM URI comes from a `FileProvider` over
-> all-files access, per `apps/android/README.md` "Alpha shortcuts") and
-> revocation on session end (§5 step 10).
+> through the same data-driven path, not a hardcoded one. Play sessions are
+> recorded and the URI grant is revoked on session end (§5 step 10) via
+> `MainActivity.onResume` (no real per-emulator result contract works with
+> `FLAG_ACTIVITY_NEW_TASK`, so regaining focus is the session-end signal).
+> Still ahead: real SAF content-URI grants (today's ROM URI comes from a
+> `FileProvider` over all-files access, per `apps/android/README.md` "Alpha
+> shortcuts").
 
 ---
 
@@ -253,13 +256,18 @@ When the user launches a game on Android, the shell:
 9. **Fires.** `context.startActivity(intent)`. Relic records the
    `play_session` start (`PLAN.md` §4.3 `play_sessions`), drops its render
    surface / minimizes to shed GPU+RAM, and restores focus on return.
-10. **Revokes.** On session end (the emulator activity reports back via the
-    standard `onActivityResult` / activity-result contract, or on a
-    session-timeout watchdog), the shell calls
+10. **Revokes.** On session end, the shell calls
     `context.revokeUriPermission(package, rom_uri,
     Intent.FLAG_GRANT_READ_URI_PERMISSION)` to drop the grant. The grant is
     ephemeral and scoped to the session; it does not persist across launches
-    and is not broadened to the library tree.
+    and is not broadened to the library tree. In practice "session end" is
+    detected via `MainActivity.onResume` (Relic regaining focus) rather than
+    `onActivityResult` — every shipped template sets
+    `FLAG_ACTIVITY_NEW_TASK`, and Android's own `startActivityForResult` docs
+    warn that flag breaks the result callback, so there's no reliable
+    per-launch result signal to hook instead. This means a crash that never
+    returns focus to Relic (rather than a normal exit) leaves the grant
+    un-revoked until Relic's process dies — a real gap, not a hidden one.
 
 ### Security note
 

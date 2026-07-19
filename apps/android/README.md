@@ -44,7 +44,11 @@ bindings, and runs Gradle. Output: `apps/android/app/build/outputs/apk/`.
   path this access model already gives it — the ROM grant to the emulator is
   correctly scoped either way, only *Relic's own* library reads are broader
   than the eventual SAF model.
-- **URI grant revocation isn't wired to session end** (docs/android-intents.md
-  §5 step 10) — there's no session-lifecycle watchdog yet. The grant is
-  scoped to one file and one package and drops when Relic's process dies.
+- **Session-end detection is `onResume`, not a real result contract**
+  (docs/android-intents.md §5 step 10): every shipped template sets
+  `FLAG_ACTIVITY_NEW_TASK`, which breaks `startActivityForResult`'s callback,
+  so `MainActivity.onResume` — firing when Relic regains focus — is what ends
+  the play session and revokes the ROM's `FileProvider` URI grant instead.
+  Good enough for a foreground return; doesn't yet cover the emulator crashing
+  without ever returning focus.
 - Touch-first UI; controller focus navigation is the next shell milestone.
