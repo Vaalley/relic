@@ -51,4 +51,12 @@ bindings, and runs Gradle. Output: `apps/android/app/build/outputs/apk/`.
   the play session and revokes the ROM's `FileProvider` URI grant instead.
   Good enough for a foreground return; doesn't yet cover the emulator crashing
   without ever returning focus.
-- Touch-first UI; controller focus navigation is the next shell milestone.
+- Every screen requests an initial focus target on entry (first grid tile,
+  or a fallback control when its list is empty) so a gamepad-only user with
+  no touch input isn't stuck with dead D-pad input, and the two root screens
+  (setup wizard, library) swallow the back button instead of falling through
+  to the Activity's default `finish()` — required since Relic can be the
+  device's Home app and there's nothing "behind" it to return to. Grid
+  traversal itself still relies on Compose's default 2D focus search
+  (untested on a physical gamepad/handheld); if cross-row jumps misbehave on
+  odd screen widths, that's the likely next rough edge.
