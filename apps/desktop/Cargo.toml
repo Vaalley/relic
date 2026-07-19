@@ -14,6 +14,7 @@ path = "src/main.rs"
 relic-core.workspace = true
 slint = "1.17"
 rfd = "0.15"
+dirs = "5"
 
 [build-dependencies]
 slint-build = "1.17"

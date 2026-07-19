@@ -5,9 +5,10 @@
 //! detail page, launch, gamepad input, or theming yet (PLAN.md Phase 2 exit
 //! criteria are still ahead).
 //!
-//! Demo data: scans `fixtures/mini` on startup so the list views have real
-//! rows to show even before the user adds a library of their own via
-//! "Add Folder…".
+//! The library database is a real file under the OS data dir (persists
+//! across launches — added libraries stay added). In debug builds, if that
+//! database has no games yet, `fixtures/mini` is scanned in as a one-time
+//! seed so the views aren't empty before a real folder is added.
 
 slint::include_modules!();
 
@@ -22,21 +23,36 @@ fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/mini")
 }
 
-fn main() -> Result<(), slint::PlatformError> {
-    let mut engine = Engine::open_in_memory().expect("in-memory engine should always open");
+fn app_db_path() -> PathBuf {
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("relic")
+        .join("library.db")
+}
 
-    let root = fixtures_root();
-    if root.is_dir() {
-        let library_id = engine
-            .add_library(&root, "fixtures-mini")
-            .expect("adding demo library should not fail");
-        engine
-            .scan(library_id, &mut |_event| {})
-            .expect("scanning demo library should not fail");
+fn main() -> Result<(), slint::PlatformError> {
+    let db_path = app_db_path();
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent).expect("creating the app data directory should not fail");
+    }
+    let mut engine = Engine::open(&db_path).expect("opening the library database should not fail");
+
+    let has_games = engine
+        .list_systems()
+        .unwrap_or_default()
+        .iter()
+        .any(|s| s.game_count > 0);
+    if cfg!(debug_assertions) && !has_games {
+        let root = fixtures_root();
+        if root.is_dir() {
+            if let Ok(library_id) = engine.add_library(&root, "fixtures-mini") {
+                let _ = engine.scan(library_id, &mut |_event| {});
+            }
+        }
     }
 
     let window = MainWindow::new()?;
-    window.set_status_line(format!("core {}", engine.version()).into());
+    window.set_status_line(format!("core {} — {}", engine.version(), db_path.display()).into());
 
     let engine = Rc::new(RefCell::new(engine));
     let system_slugs: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
