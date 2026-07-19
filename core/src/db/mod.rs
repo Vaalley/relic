@@ -12,6 +12,9 @@ use rusqlite::Connection;
 
 use crate::{Error, Result};
 
+mod module_migrations;
+pub use module_migrations::apply_module_migrations;
+
 /// Ordered, append-only migration list. Index + 1 == resulting `user_version`.
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_init.sql"),
