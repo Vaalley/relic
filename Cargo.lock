@@ -4723,6 +4723,7 @@ name = "relic-retroachievements"
 version = "0.1.0"
 dependencies = [
  "relic-core",
+ "rusqlite",
 ]
 
 [[package]]

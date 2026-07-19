@@ -63,6 +63,28 @@ pub struct CollectionInfo {
     pub kind: String,
 }
 
+#[derive(uniffi::Record)]
+pub struct GameStatsInfo {
+    pub game_id: i64,
+    pub name: String,
+    pub system_slug: String,
+    pub play_count: i64,
+    pub total_seconds: i64,
+    pub last_played_at: Option<i64>,
+}
+
+#[derive(uniffi::Record)]
+pub struct PlayTotals {
+    pub sessions: i64,
+    pub total_seconds: i64,
+}
+
+#[derive(uniffi::Record)]
+pub struct DatImportStats {
+    pub matched: u64,
+    pub unmatched: u64,
+}
+
 /// Implemented on the foreign side (Kotlin/Swift) to receive engine events.
 #[uniffi::export(callback_interface)]
 pub trait EventListener: Send + Sync {
@@ -264,6 +286,71 @@ impl RelicEngine {
     pub fn delete_collection(&self, collection_id: i64) -> Result<(), RelicError> {
         self.with_engine(|e| e.delete_collection(collection_id))
     }
+
+    /// Most recently played games, newest first.
+    pub fn recently_played(&self, limit: u64) -> Result<Vec<GameStatsInfo>, RelicError> {
+        self.with_engine(|e| {
+            Ok(e.recently_played(limit as usize)?
+                .into_iter()
+                .map(|s| GameStatsInfo {
+                    game_id: s.game_id,
+                    name: s.name,
+                    system_slug: s.system_slug,
+                    play_count: s.play_count,
+                    total_seconds: s.total_seconds,
+                    last_played_at: s.last_played_at,
+                })
+                .collect())
+        })
+    }
+
+    /// Top-played games by total seconds.
+    pub fn most_played(&self, limit: u64) -> Result<Vec<GameStatsInfo>, RelicError> {
+        self.with_engine(|e| {
+            Ok(e.most_played(limit as usize)?
+                .into_iter()
+                .map(|s| GameStatsInfo {
+                    game_id: s.game_id,
+                    name: s.name,
+                    system_slug: s.system_slug,
+                    play_count: s.play_count,
+                    total_seconds: s.total_seconds,
+                    last_played_at: s.last_played_at,
+                })
+                .collect())
+        })
+    }
+
+    /// Aggregate play stats: `(sessions, total_seconds)`.
+    pub fn play_totals(&self) -> Result<PlayTotals, RelicError> {
+        self.with_engine(|e| {
+            let (sessions, total_seconds) = e.play_totals()?;
+            Ok(PlayTotals {
+                sessions,
+                total_seconds,
+            })
+        })
+    }
+
+    /// Match a DAT XML's `<game>`/`<rom>` entries against scanned ROMs.
+    pub fn import_dat(
+        &self,
+        system_slug: String,
+        dat_xml: String,
+    ) -> Result<DatImportStats, RelicError> {
+        self.with_engine(|e| {
+            let stats = e.import_dat(&system_slug, &dat_xml)?;
+            Ok(DatImportStats {
+                matched: stats.matched,
+                unmatched: stats.unmatched,
+            })
+        })
+    }
+
+    /// Write `gamelist.xml` for `library_id`'s systems; returns bytes written.
+    pub fn export_gamelists(&self, library_id: i64) -> Result<u64, RelicError> {
+        self.with_engine(|e| e.export_gamelists(library_id))
+    }
 }
 
 /// Resolved design tokens (PLAN.md §6 layer 1) for a shell to apply, so
@@ -366,5 +453,15 @@ mod tests {
         engine.delete_collection(manual_id).unwrap();
         engine.delete_collection(smart_id).unwrap();
         assert!(engine.list_collections().unwrap().is_empty());
+
+        // Stats surface: fresh library has no play sessions yet.
+        let totals = engine.play_totals().unwrap();
+        assert_eq!(totals.sessions, 0);
+        assert_eq!(totals.total_seconds, 0);
+        assert!(engine.recently_played(10).unwrap().is_empty());
+        assert!(engine.most_played(10).unwrap().is_empty());
+
+        // Gamelist export should succeed on the scanned library.
+        assert!(engine.export_gamelists(lib).is_ok());
     }
 }
