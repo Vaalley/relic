@@ -135,6 +135,25 @@ pub fn hash_pending(
     Ok(stats)
 }
 
+/// `(crc32, md5)` of a game's first indexed file, for hash-based lookups
+/// (DAT matching, RA/scraper game identification). `None` if the game has
+/// no indexed file at all; individual hash fields are `None` if the
+/// background hasher (`hash_pending`) hasn't reached that file yet.
+pub fn primary_file_hash(
+    db: &crate::db::Db,
+    game_id: i64,
+) -> crate::Result<Option<(Option<String>, Option<String>)>> {
+    use rusqlite::OptionalExtension;
+    db.conn()
+        .query_row(
+            "SELECT crc32, md5 FROM files WHERE game_id = ?1 ORDER BY id LIMIT 1",
+            rusqlite::params![game_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +299,30 @@ mod tests {
         let stats2 = hash_pending(&mut db, Some(library_id), 10, &mut |e| events2.push(e)).unwrap();
         assert_eq!(stats2.hashed, 0);
         assert_eq!(stats2.failed, 1);
+    }
+
+    #[test]
+    fn primary_file_hash_reflects_lazy_hashing_progress() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("present.rom"), b"relic test fixture").unwrap();
+
+        let mut db = Db::open_in_memory().unwrap();
+        let library_id = seed(&mut db, dir.path());
+        let game_id: i64 = db
+            .conn()
+            .query_row("SELECT id FROM games LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+
+        // Before hashing: a file row exists but hash columns are still NULL.
+        let (crc32, md5) = primary_file_hash(&db, game_id).unwrap().unwrap();
+        assert_eq!(crc32, None);
+        assert_eq!(md5, None);
+
+        hash_pending(&mut db, Some(library_id), 10, &mut |_| {}).unwrap();
+        let (crc32, md5) = primary_file_hash(&db, game_id).unwrap().unwrap();
+        assert_eq!(crc32.as_deref(), Some("1200b7b5"));
+        assert_eq!(md5.as_deref(), Some("e0bfa1288941a3a223f67af71e2e45f5"));
+
+        assert!(primary_file_hash(&db, 999_999).unwrap().is_none());
     }
 }

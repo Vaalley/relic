@@ -13,4 +13,12 @@ path = "src/main.rs"
 [dependencies]
 relic-core.workspace = true
 relic-themes = { path = "../../modules/themes" }
+relic-scraper = { path = "../../modules/scraper" }
+rusqlite.workspace = true
 clap = { version = "4", features = ["derive"] }
+
+[features]
+# Off by default: the base relic-cli binary makes no network calls. Enabling
+# this pulls in reqwest (via relic-scraper's own `screenscraper` feature)
+# and unlocks the `scrape` subcommand — PLAN.md T1, opt-in only.
+screenscraper = ["relic-scraper/screenscraper"]

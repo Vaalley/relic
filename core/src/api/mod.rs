@@ -344,6 +344,14 @@ impl Engine {
         crate::scan::hash::hash_pending(&mut self.db, library_id, limit, sink)
     }
 
+    /// `(crc32, md5)` of a game's first indexed file, for hash-based lookups
+    /// (DAT matching, RA/scraper game identification); `None` if the game
+    /// has no indexed file. Run `hash_pending` first if both hash fields
+    /// come back `None` for a file that should have one.
+    pub fn game_hashes(&self, game_id: i64) -> Result<Option<(Option<String>, Option<String>)>> {
+        crate::scan::hash::primary_file_hash(&self.db, game_id)
+    }
+
     /// Absolute path of a cached thumbnail, if the engine has a cache dir.
     pub fn thumbnail_path(&self, cache_hash: &str) -> Option<PathBuf> {
         if cache_hash.len() < 2 {

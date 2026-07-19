@@ -208,6 +208,34 @@ enum Command {
     },
     /// Validate a theme directory against the layer-1 token spec (PLAN.md section 6).
     ThemeValidate { path: PathBuf },
+    /// Scrape metadata matches for one system via ScreenScraper (PLAN.md
+    /// §7.1). Requires the `screenscraper` cargo feature; opt-in, T1.
+    #[cfg(feature = "screenscraper")]
+    Scrape {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        system: String,
+        #[arg(long)]
+        dev_id: String,
+        #[arg(long)]
+        dev_password: String,
+        #[arg(long)]
+        user_login: Option<String>,
+        #[arg(long)]
+        user_password: Option<String>,
+    },
+    /// List scraper matches still awaiting user confirmation.
+    ScrapePending {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+    },
+    /// Confirm a low-confidence scraper match so it's no longer pending.
+    ScrapeConfirm {
+        #[arg(long, default_value = "relic.db")]
+        db: PathBuf,
+        game_id: i64,
+        provider_id: String,
+    },
 }
 
 fn main() {
@@ -280,6 +308,28 @@ fn run() -> Result<(), Box<dyn Error>> {
         Command::Intents => cmd_intents(),
         Command::IntentValidate { path } => cmd_intent_validate(path.as_deref()),
         Command::ThemeValidate { path } => cmd_theme_validate(&path),
+        #[cfg(feature = "screenscraper")]
+        Command::Scrape {
+            db,
+            system,
+            dev_id,
+            dev_password,
+            user_login,
+            user_password,
+        } => cmd_scrape(
+            &db,
+            &system,
+            &dev_id,
+            &dev_password,
+            user_login.as_deref(),
+            user_password.as_deref(),
+        ),
+        Command::ScrapePending { db } => cmd_scrape_pending(&db),
+        Command::ScrapeConfirm {
+            db,
+            game_id,
+            provider_id,
+        } => cmd_scrape_confirm(&db, game_id, &provider_id),
     }
 }
 
@@ -684,5 +734,108 @@ fn cmd_theme_validate(path: &Path) -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
+    Ok(())
+}
+
+/// Runs the matching pipeline for every game in `system` against
+/// ScreenScraper, saving each best candidate (`pipeline::match_game` already
+/// sorts highest-confidence first). Low-confidence saves land unconfirmed —
+/// review them with `scrape-pending` and accept with `scrape-confirm`.
+#[cfg(feature = "screenscraper")]
+fn cmd_scrape(
+    db: &Path,
+    system: &str,
+    dev_id: &str,
+    dev_password: &str,
+    user_login: Option<&str>,
+    user_password: Option<&str>,
+) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    let mut conn = rusqlite::Connection::open(db)?;
+    relic_scraper::migrate(&mut conn)?;
+
+    let mut provider = relic_scraper::providers::screenscraper::ScreenScraperProvider::new(
+        dev_id.to_string(),
+        dev_password.to_string(),
+    );
+    if let (Some(login), Some(password)) = (user_login, user_password) {
+        provider = provider.with_user(login.to_string(), password.to_string());
+    }
+    let providers: [&dyn relic_scraper::Provider; 1] = [&provider];
+
+    let games = engine.query_games(Some(system), None)?;
+    let mut matched = 0u64;
+    let mut unmatched = 0u64;
+    for game in &games {
+        let (crc32_hex, md5) = engine.game_hashes(game.id)?.unwrap_or((None, None));
+        let crc32 = crc32_hex
+            .as_deref()
+            .and_then(|s| u32::from_str_radix(s, 16).ok());
+        let filename = game.rel_path.as_deref().unwrap_or(&game.name);
+        let query = relic_scraper::SearchQuery {
+            system_slug: &game.system_slug,
+            filename,
+            crc32,
+            md5: md5.as_deref(),
+        };
+        match relic_scraper::match_game(&providers, &query) {
+            Ok(results) if !results.is_empty() => {
+                relic_scraper::save_match(&conn, game.id, &results[0])?;
+                matched += 1;
+            }
+            Ok(_) => unmatched += 1,
+            Err(relic_scraper::ProviderError::RateLimited) => {
+                eprintln!("rate limited by ScreenScraper — stopping early");
+                break;
+            }
+            Err(e) => {
+                eprintln!("warning: {} — {e}", game.name);
+                unmatched += 1;
+            }
+        }
+    }
+    println!("matched={matched} unmatched={unmatched}");
+    println!("review low-confidence matches with `relic scrape-pending`");
+    Ok(())
+}
+
+fn cmd_scrape_pending(db: &Path) -> Result<(), Box<dyn Error>> {
+    let engine = Engine::open(db)?;
+    let mut conn = rusqlite::Connection::open(db)?;
+    relic_scraper::migrate(&mut conn)?;
+
+    let pending = relic_scraper::pending_matches(&conn)?;
+    if pending.is_empty() {
+        println!("no pending matches");
+        return Ok(());
+    }
+    let games = engine.query_games(None, None)?;
+    println!(
+        "{:<6} {:<24} {:<14} {:<8} EXTERNAL_ID",
+        "GAME", "NAME", "PROVIDER", "CONF"
+    );
+    for p in pending {
+        let name = games
+            .iter()
+            .find(|g| g.id == p.game_id)
+            .map(|g| g.name.as_str())
+            .unwrap_or("?");
+        println!(
+            "{:<6} {:<24} {:<14} {:<8} {}",
+            p.game_id,
+            name,
+            p.provider_id,
+            p.confidence.as_str(),
+            p.external_id
+        );
+    }
+    Ok(())
+}
+
+fn cmd_scrape_confirm(db: &Path, game_id: i64, provider_id: &str) -> Result<(), Box<dyn Error>> {
+    let mut conn = rusqlite::Connection::open(db)?;
+    relic_scraper::migrate(&mut conn)?;
+    relic_scraper::confirm_match(&conn, game_id, provider_id)?;
+    println!("confirmed match for game #{game_id} ({provider_id})");
     Ok(())
 }

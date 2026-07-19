@@ -4673,7 +4673,9 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "relic-core",
+ "relic-scraper",
  "relic-themes",
+ "rusqlite",
 ]
 
 [[package]]
