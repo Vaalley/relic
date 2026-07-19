@@ -111,27 +111,59 @@ pub fn resolve(theme: Option<&Theme>, variant: Variant) -> ResolvedTokens {
 
 fn resolve_colors(theme: Option<&ColorSet>, default: &ColorSet) -> ResolvedColors {
     ResolvedColors {
-        bg: pick_str(theme.and_then(|c| c.bg.as_deref()), default.bg.as_deref()),
-        surface: pick_str(
+        bg: normalize_hex_color(&pick_str(
+            theme.and_then(|c| c.bg.as_deref()),
+            default.bg.as_deref(),
+        )),
+        surface: normalize_hex_color(&pick_str(
             theme.and_then(|c| c.surface.as_deref()),
             default.surface.as_deref(),
-        ),
-        text: pick_str(
+        )),
+        text: normalize_hex_color(&pick_str(
             theme.and_then(|c| c.text.as_deref()),
             default.text.as_deref(),
-        ),
-        text_dim: pick_str(
+        )),
+        text_dim: normalize_hex_color(&pick_str(
             theme.and_then(|c| c.text_dim.as_deref()),
             default.text_dim.as_deref(),
-        ),
-        accent: pick_str(
+        )),
+        accent: normalize_hex_color(&pick_str(
             theme.and_then(|c| c.accent.as_deref()),
             default.accent.as_deref(),
-        ),
-        favorite: pick_str(
+        )),
+        favorite: normalize_hex_color(&pick_str(
             theme.and_then(|c| c.favorite.as_deref()),
             default.favorite.as_deref(),
+        )),
+    }
+}
+
+/// Expand shorthand hex (`#rgb`/`#rgba`) to full form and drop any alpha
+/// channel (`#rgba`/`#rrggbbaa` → `#rrggbb`). `validate.rs`'s `is_valid_hex`
+/// accepts all four CSS-style forms per `docs/theme-format.md` §5.1, but
+/// every current consumer (both shells' hex parsers) only understands
+/// opaque `#rrggbb` — normalizing here means shells never need their own
+/// shorthand/alpha handling. Anything not matching a valid hex shape passes
+/// through unchanged (defensive; `is_valid_hex` is what actually rejects
+/// bad input, at validation time, not here).
+fn normalize_hex_color(s: &str) -> String {
+    let Some(rest) = s.strip_prefix('#') else {
+        return s.to_string();
+    };
+    if !rest.chars().all(|c| c.is_ascii_hexdigit()) {
+        return s.to_string();
+    }
+    match rest.len() {
+        3 => format!("#{}", rest.chars().flat_map(|c| [c, c]).collect::<String>()),
+        4 => format!(
+            "#{}",
+            rest.chars()
+                .take(3)
+                .flat_map(|c| [c, c])
+                .collect::<String>()
         ),
+        8 => format!("#{}", &rest[..6]),
+        _ => s.to_string(),
     }
 }
 

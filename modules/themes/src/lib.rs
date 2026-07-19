@@ -153,6 +153,32 @@ bg = "#000000"
         assert_eq!(light.colors.accent, "#3a5fd9");
     }
 
+    #[test]
+    fn shorthand_and_alpha_hex_normalize_to_rrggbb() {
+        // `validate_manifest` accepts #RGB/#RGBA/#RRGGBBAA (spec 5.1), but
+        // every current consumer (both shells) only understands opaque
+        // #rrggbb — resolution must normalize so shells never see shorthand.
+        let src = r##"
+[theme]
+name = "Shorthand"
+format_version = 1
+
+[colors.dark]
+accent = "#f00"
+favorite = "#0f0f"
+bg = "#1122ffcc"
+"##;
+        let theme = parse_theme(src).expect("shorthand hex parses cleanly");
+        assert!(
+            validate_manifest(src).is_empty(),
+            "shorthand/alpha hex must not itself be a validation issue"
+        );
+        let tokens = resolve(Some(&theme), Variant::Dark);
+        assert_eq!(tokens.colors.accent, "#ff0000");
+        assert_eq!(tokens.colors.favorite, "#00ff00");
+        assert_eq!(tokens.colors.bg, "#1122ff");
+    }
+
     fn assert_has_error(issues: &[Issue], code: &str) {
         assert!(
             issues
