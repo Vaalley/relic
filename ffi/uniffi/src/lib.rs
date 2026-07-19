@@ -6,6 +6,9 @@
 //! commands. Blocking calls (scan) are expected to run on a background
 //! dispatcher on the Kotlin side; events stream through a foreign-implemented
 //! listener trait.
+//!
+//! Also exposes `relic-themes`' resolved design tokens (PLAN.md §6 layer 1,
+//! `theme_colors`) as a free function — theming needs no engine instance.
 
 use std::sync::Mutex;
 
@@ -50,6 +53,14 @@ pub struct ScanSummary {
     pub added: u64,
     pub removed: u64,
     pub unchanged: u64,
+}
+
+#[derive(uniffi::Record)]
+pub struct CollectionInfo {
+    pub id: i64,
+    pub name: String,
+    /// `"manual"` or `"smart"`.
+    pub kind: String,
 }
 
 /// Implemented on the foreign side (Kotlin/Swift) to receive engine events.
@@ -184,6 +195,113 @@ impl RelicEngine {
             .thumbnail_path(&cache_hash)
             .map(|p| p.to_string_lossy().into_owned())
     }
+
+    pub fn create_manual_collection(&self, name: String) -> Result<i64, RelicError> {
+        self.with_engine(|e| e.create_manual_collection(&name))
+    }
+
+    /// `system`/`search`/`favorite` are the same filters `relic-cli
+    /// collection-add-smart` takes; membership is computed live, not stored.
+    pub fn create_smart_collection(
+        &self,
+        name: String,
+        system: Option<String>,
+        search: Option<String>,
+        favorite: Option<bool>,
+    ) -> Result<i64, RelicError> {
+        self.with_engine(|e| {
+            let query = relic_core::collections::SmartQuery {
+                system,
+                search,
+                favorite,
+            };
+            e.create_smart_collection(&name, &query)
+        })
+    }
+
+    pub fn list_collections(&self) -> Result<Vec<CollectionInfo>, RelicError> {
+        self.with_engine(|e| {
+            Ok(e.list_collections()?
+                .into_iter()
+                .map(|c| CollectionInfo {
+                    id: c.id,
+                    name: c.name,
+                    kind: c.kind,
+                })
+                .collect())
+        })
+    }
+
+    pub fn collection_games(&self, collection_id: i64) -> Result<Vec<GameInfo>, RelicError> {
+        self.with_engine(|e| {
+            Ok(e.collection_games(collection_id)?
+                .into_iter()
+                .map(|g| GameInfo {
+                    id: g.id,
+                    system_slug: g.system_slug,
+                    name: g.name,
+                    favorite: g.favorite,
+                    rel_path: g.rel_path,
+                })
+                .collect())
+        })
+    }
+
+    /// No-op (per `relic-core`) if `game_id` is already a member.
+    pub fn add_to_collection(&self, collection_id: i64, game_id: i64) -> Result<(), RelicError> {
+        self.with_engine(|e| e.add_to_collection(collection_id, game_id))
+    }
+
+    pub fn remove_from_collection(
+        &self,
+        collection_id: i64,
+        game_id: i64,
+    ) -> Result<(), RelicError> {
+        self.with_engine(|e| e.remove_from_collection(collection_id, game_id))
+    }
+
+    /// Works for both manual and smart collections.
+    pub fn delete_collection(&self, collection_id: i64) -> Result<(), RelicError> {
+        self.with_engine(|e| e.delete_collection(collection_id))
+    }
+}
+
+/// Resolved design tokens (PLAN.md §6 layer 1) for a shell to apply, so
+/// Kotlin/Swift never duplicate `relic-themes`' resolution logic. Colors are
+/// `"#rrggbb"` hex strings, same convention as the bundled default theme.
+#[derive(uniffi::Record)]
+pub struct ThemeColors {
+    pub bg: String,
+    pub surface: String,
+    pub text: String,
+    pub text_dim: String,
+    pub accent: String,
+    pub favorite: String,
+    pub font_family: String,
+    pub radius: i64,
+}
+
+/// Resolve the bundled default theme's tokens for `dark`/light variant.
+/// Only the default theme is exposed for now — custom theme loading over
+/// FFI is deferred until a shell needs to let users pick one.
+#[uniffi::export]
+pub fn theme_colors(dark: bool) -> ThemeColors {
+    let variant = if dark {
+        relic_themes::Variant::Dark
+    } else {
+        relic_themes::Variant::Light
+    };
+    let tokens = relic_themes::resolve(Some(relic_themes::default_theme()), variant);
+    ThemeColors {
+        bg: tokens.colors.bg,
+        surface: tokens.colors.surface,
+        text: tokens.colors.text,
+        text_dim: tokens.colors.text_dim,
+        accent: tokens.colors.accent,
+        favorite: tokens.colors.favorite,
+        font_family: tokens.font_family,
+        radius: tokens.radius,
+    }
 }
 
 #[cfg(test)]
@@ -194,6 +312,15 @@ mod tests {
     impl EventListener for NullListener {
         fn on_scan_progress(&self, _done: u64, _total: u64) {}
         fn on_warning(&self, _code: String, _context: String) {}
+    }
+
+    #[test]
+    fn theme_colors_resolves_dark_and_light_variants_distinctly() {
+        let dark = theme_colors(true);
+        let light = theme_colors(false);
+        assert!(dark.bg.starts_with('#'));
+        assert!(light.bg.starts_with('#'));
+        assert_ne!(dark.bg, light.bg);
     }
 
     #[test]
@@ -220,5 +347,24 @@ mod tests {
         assert_eq!(games.len(), 1);
         engine.set_favorite(games[0].id, true).unwrap();
         assert!(engine.query_games(None, None).unwrap()[0].favorite);
+
+        let manual_id = engine.create_manual_collection("Faves".into()).unwrap();
+        engine.add_to_collection(manual_id, games[0].id).unwrap();
+        assert_eq!(engine.collection_games(manual_id).unwrap().len(), 1);
+        engine
+            .remove_from_collection(manual_id, games[0].id)
+            .unwrap();
+        assert!(engine.collection_games(manual_id).unwrap().is_empty());
+
+        let smart_id = engine
+            .create_smart_collection("Favorites".into(), None, None, Some(true))
+            .unwrap();
+        assert_eq!(engine.collection_games(smart_id).unwrap().len(), 1);
+
+        let collections = engine.list_collections().unwrap();
+        assert_eq!(collections.len(), 2);
+        engine.delete_collection(manual_id).unwrap();
+        engine.delete_collection(smart_id).unwrap();
+        assert!(engine.list_collections().unwrap().is_empty());
     }
 }
