@@ -1,28 +1,100 @@
-// Relic desktop shell — toolchain proof-of-concept window (ADR-002, Slint).
-// Not the real UI: PLAN.md Phase 2 (system browser, grid, detail, launch)
-// starts from here once implementation begins.
+// Relic desktop shell — Phase 2 system/game browser skeleton (ADR-002, Slint).
+// Real data from relic-core via Engine, wired up in src/main.rs. Still missing
+// from PLAN.md Phase 2 scope: detail page, search, favorites toggle, launch,
+// first-run wizard, gamepad input, design-token theming.
+
+import { StandardListView, ListView } from "std-widgets.slint";
+
+export struct GameItem {
+    name: string,
+    favorite: bool,
+}
 
 export component MainWindow inherits Window {
     title: "Relic";
-    preferred-width: 800px;
+    preferred-width: 900px;
     preferred-height: 600px;
     background: #1a1a1a;
 
     in property <string> status-line;
+    in property <[StandardListViewItem]> systems-model;
+    in property <[GameItem]> games-model;
+    in property <string> games-heading;
+
+    callback system-selected(int);
 
     VerticalLayout {
-        alignment: center;
+        padding: 12px;
+        spacing: 8px;
+
         Text {
             text: "Relic";
-            font-size: 32px;
+            font-size: 28px;
+            font-weight: 700;
             color: white;
-            horizontal-alignment: center;
         }
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            VerticalLayout {
+                width: 260px;
+                spacing: 4px;
+
+                Text {
+                    text: "Systems";
+                    font-size: 16px;
+                    color: #cccccc;
+                }
+
+                StandardListView {
+                    model: systems-model;
+                    current-item-changed(index) => {
+                        system-selected(index);
+                    }
+                }
+            }
+
+            VerticalLayout {
+                spacing: 4px;
+
+                Text {
+                    text: games-heading;
+                    font-size: 16px;
+                    color: #cccccc;
+                }
+
+                ListView {
+                    for game in games-model: Rectangle {
+                        height: 26px;
+
+                        HorizontalLayout {
+                            padding-left: 4px;
+                            spacing: 6px;
+                            alignment: start;
+
+                            Text {
+                                text: game.favorite ? "★" : " ";
+                                color: #e0c341;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: game.name;
+                                color: white;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Text {
             text: status-line;
-            font-size: 14px;
             color: #999999;
-            horizontal-alignment: center;
+            font-size: 12px;
         }
     }
 }
