@@ -20,7 +20,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection};
 
-const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_ra_tables.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_ra_tables.sql"),
+    include_str!("../migrations/0002_ra_no_match_cache.sql"),
+];
 
 /// Bring the module's own tables up to date. Call once per connection
 /// before using any other function in this module.

@@ -9,3 +9,26 @@ repository.workspace = true
 [dependencies]
 relic-core.workspace = true
 rusqlite.workspace = true
+# Network deps are optional and only pulled in by the `network` feature. A
+# default build of relic-retroachievements stays network-free (PLAN.md T1 /
+# AGENTS.md hard rule #1: zero telemetry by default) — hashing and the
+# no-match cache never need reqwest.
+reqwest = { version = "0.12", features = ["blocking", "json"], optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { version = "1", optional = true }
+
+[build-dependencies]
+# Compiles the vendored rc_hash subset of rcheevos (native/rcheevos, see
+# native/rcheevos/VENDORED.md) — design doc §2.2.
+cc = "1"
+
+[dev-dependencies]
+# Independent MD5 impl to cross-check rc_hash's output in tests (not used at
+# runtime — rc_hash itself produces the real RA hash).
+md-5 = "0.10"
+
+[features]
+# RA hash-library + achievement/progress API client (design doc §3). Off by
+# default — enabling pulls in reqwest, which nothing else in this crate needs.
+network = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+

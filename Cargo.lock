@@ -4795,8 +4795,13 @@ dependencies = [
 name = "relic-retroachievements"
 version = "0.1.0"
 dependencies = [
+ "cc",
+ "md-5",
  "relic-core",
+ "reqwest",
  "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -9,18 +9,29 @@
 //! not an emulator, so it cannot itself unlock achievements; that happens
 //! inside RA-aware emulator cores.
 //!
-//! Planned for Phase 6, after the 1.0 theming milestone. Sub-phase 6a scope
-//! implemented so far (design doc §7.1): module-owned schema (`store`) and a
-//! match store keyed on content hash. **Not yet implemented**: the actual
-//! `rc_hash` binding (design doc §2.2 recommends vendoring `rcheevos` as a
-//! C dependency — a real decision to make deliberately, not a default to
-//! reach for while scaffolding) and any network client (§3). Until those
-//! land, this module has zero network activity and compiles out cleanly
-//! with `--no-default-features` on `relic-core`.
+//! Planned for Phase 6, after the 1.0 theming milestone. Sub-phase 6a
+//! (design doc §7.1) is now complete: module-owned schema (`store`), a
+//! match store keyed on content hash, and `rc_hash` bound via FFI (`hash`,
+//! `native/rcheevos/`) for cartridge/ROM consoles. Sub-phase 6b groundwork
+//! (design doc §7.2) — the hash-library/achievement API client (`client`)
+//! and the no-match TTL cache (`no_match_cache`) — exists behind the
+//! `network` cargo feature; a default build stays network-free
+//! (`--no-default-features` on `relic-core` still compiles this module out
+//! entirely).
 
+pub mod hash;
+pub mod no_match_cache;
 pub mod store;
 
+#[cfg(feature = "network")]
+pub mod client;
+
+pub use hash::{hash_buffer, hash_file, RaHash};
+pub use no_match_cache::{is_cached_no_match, record_no_match};
 pub use store::{has_cheevos, matches_for_file, migrate, save_match, RaGameMatch};
+
+#[cfg(feature = "network")]
+pub use client::{GameIdMatch, RaClientConfig, RaClientError, RaHashClient};
 
 /// Stable identifier this module reports through the engine's
 /// `capabilities()` API so shells can hide UI for absent modules.
