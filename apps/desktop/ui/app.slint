@@ -3,7 +3,7 @@
 // from PLAN.md Phase 2 scope: detail page, search, favorites toggle, launch,
 // first-run wizard, gamepad input, design-token theming.
 
-import { LineEdit, ListView, StandardListView } from "std-widgets.slint";
+import { Button, LineEdit, ListView, StandardListView } from "std-widgets.slint";
 
 export struct GameItem {
     id: int,
@@ -26,16 +26,29 @@ export component MainWindow inherits Window {
     callback system-selected(int);
     callback search-edited(string);
     callback favorite-toggled(int);
+    callback add-library-requested();
 
     VerticalLayout {
         padding: 12px;
         spacing: 8px;
 
-        Text {
-            text: "Relic";
-            font-size: 28px;
-            font-weight: 700;
-            color: white;
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: space-between;
+
+            Text {
+                text: "Relic";
+                font-size: 28px;
+                font-weight: 700;
+                color: white;
+            }
+
+            Button {
+                text: "Add Folder…";
+                clicked => {
+                    add-library-requested();
+                }
+            }
         }
 
         HorizontalLayout {

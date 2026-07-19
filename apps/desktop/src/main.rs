@@ -2,12 +2,12 @@
 //!
 //! UI stack decision (ADR-002, `docs/adr/0002-desktop-ui-stack.md`) is settled:
 //! Slint. This is a system/game browser skeleton — real `Engine` data, no
-//! detail page, search, favorites toggle, launch, first-run wizard, gamepad
-//! input, or theming yet (PLAN.md Phase 2 exit criteria are still ahead).
+//! detail page, launch, gamepad input, or theming yet (PLAN.md Phase 2 exit
+//! criteria are still ahead).
 //!
 //! Demo data: scans `fixtures/mini` on startup so the list views have real
-//! rows to show. First-run folder picking (real user libraries) replaces this
-//! before Phase 2 is done.
+//! rows to show even before the user adds a library of their own via
+//! "Add Folder…".
 
 slint::include_modules!();
 
@@ -15,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use relic_core::api::Engine;
+use relic_core::api::{Engine, GameRow};
 use slint::{ModelRc, StandardListViewItem, VecModel};
 
 fn fixtures_root() -> PathBuf {
@@ -35,35 +35,15 @@ fn main() -> Result<(), slint::PlatformError> {
             .expect("scanning demo library should not fail");
     }
 
-    let systems = engine.list_systems().unwrap_or_default();
-    let system_slugs: Rc<Vec<String>> = Rc::new(systems.iter().map(|s| s.slug.clone()).collect());
-
-    let systems_items: Vec<StandardListViewItem> = systems
-        .iter()
-        .map(|s| {
-            let label = format!("{} ({})", s.name, s.game_count);
-            StandardListViewItem::from(slint::SharedString::from(label))
-        })
-        .collect();
-    let systems_model = ModelRc::new(VecModel::from(systems_items));
-
     let window = MainWindow::new()?;
-    window.set_status_line(
-        format!(
-            "core {} — {} systems registered",
-            engine.version(),
-            systems.len()
-        )
-        .into(),
-    );
-    window.set_systems_model(systems_model);
+    window.set_status_line(format!("core {}", engine.version()).into());
 
     let engine = Rc::new(RefCell::new(engine));
+    let system_slugs: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let current_system: Rc<Cell<usize>> = Rc::new(Cell::new(0));
-    let current_games: Rc<RefCell<Vec<relic_core::api::GameRow>>> =
-        Rc::new(RefCell::new(Vec::new()));
+    let current_games: Rc<RefCell<Vec<GameRow>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let refresh = {
+    let refresh_games = {
         let window_weak = window.as_weak();
         let engine = Rc::clone(&engine);
         let system_slugs = Rc::clone(&system_slugs);
@@ -73,7 +53,10 @@ fn main() -> Result<(), slint::PlatformError> {
             let Some(window) = window_weak.upgrade() else {
                 return;
             };
-            let Some(slug) = system_slugs.get(current_system.get()) else {
+            let slugs = system_slugs.borrow();
+            let Some(slug) = slugs.get(current_system.get()) else {
+                window.set_games_heading("Games".into());
+                window.set_games_model(ModelRc::new(VecModel::from(Vec::<GameItem>::new())));
                 return;
             };
             let search = (!search.trim().is_empty()).then_some(search.trim());
@@ -95,42 +78,66 @@ fn main() -> Result<(), slint::PlatformError> {
         }
     };
 
-    if !system_slugs.is_empty() {
-        refresh("");
-    } else {
-        window.set_games_heading("Games".into());
-    }
+    let refresh_systems = {
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let system_slugs = Rc::clone(&system_slugs);
+        let current_system = Rc::clone(&current_system);
+        let refresh_games = refresh_games.clone();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let systems = engine.borrow().list_systems().unwrap_or_default();
+            *system_slugs.borrow_mut() = systems.iter().map(|s| s.slug.clone()).collect();
+            if current_system.get() >= systems.len() {
+                current_system.set(0);
+            }
+            let items: Vec<StandardListViewItem> = systems
+                .iter()
+                .map(|s| {
+                    let label = format!("{} ({})", s.name, s.game_count);
+                    StandardListViewItem::from(slint::SharedString::from(label))
+                })
+                .collect();
+            window.set_systems_model(ModelRc::new(VecModel::from(items)));
+            refresh_games("");
+        }
+    };
+
+    refresh_systems();
 
     window.on_system_selected({
         let current_system = Rc::clone(&current_system);
-        let refresh = refresh.clone();
-        let window_weak = window.as_weak();
+        let refresh_games = refresh_games.clone();
         move |index| {
             if index < 0 {
                 return;
             }
             current_system.set(index as usize);
-            let search = window_weak.upgrade().map(|w| w.get_search_text());
-            refresh(search.as_deref().unwrap_or(""));
+            refresh_games("");
         }
     });
 
     window.on_search_edited({
-        let refresh = refresh.clone();
+        let refresh_games = refresh_games.clone();
         move |text| {
-            refresh(text.as_str());
+            refresh_games(text.as_str());
         }
     });
 
     window.on_favorite_toggled({
         let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let current_games = Rc::clone(&current_games);
+        let refresh_games = refresh_games.clone();
         move |id| {
-            let is_favorite = current_games
+            let was_favorite = current_games
                 .borrow()
                 .iter()
                 .find(|g| g.id as i32 == id)
                 .map(|g| g.favorite);
-            let Some(was_favorite) = is_favorite else {
+            let Some(was_favorite) = was_favorite else {
                 return;
             };
             if engine
@@ -139,8 +146,40 @@ fn main() -> Result<(), slint::PlatformError> {
                 .is_ok()
             {
                 let search = window_weak.upgrade().map(|w| w.get_search_text());
-                refresh(search.as_deref().unwrap_or(""));
+                refresh_games(search.as_deref().unwrap_or(""));
             }
+        }
+    });
+
+    window.on_add_library_requested({
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        move || {
+            let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+                return;
+            };
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let name = folder
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| folder.to_string_lossy().into_owned());
+            let mut eng = engine.borrow_mut();
+            let library_id = match eng.add_library(&folder, &name) {
+                Ok(id) => id,
+                Err(e) => {
+                    window.set_status_line(format!("Failed to add {name}: {e}").into());
+                    return;
+                }
+            };
+            if let Err(e) = eng.scan(library_id, &mut |_event| {}) {
+                window.set_status_line(format!("Scan of {name} failed: {e}").into());
+                return;
+            }
+            window.set_status_line(format!("core {} — scanned {name}", eng.version()).into());
+            drop(eng);
+            refresh_systems();
         }
     });
 
