@@ -17,6 +17,14 @@ export struct StatRow {
     subtitle: string,
 }
 
+export struct PendingMatchRow {
+    game-id: int,
+    name: string,
+    provider-id: string,
+    confidence: string,
+    external-id: string,
+}
+
 // Design tokens (PLAN.md section 6 layer 1), populated from relic-themes'
 // resolved default theme in main.rs. Defaults here match the prior
 // hardcoded look so the UI degrades sanely if Rust never sets them.
@@ -48,6 +56,8 @@ export component MainWindow inherits Window {
     in property <[StatRow]> recent-model;
     in property <[StatRow]> most-played-model;
     in property <string> stats-summary;
+    in property <bool> show-scraper: false;
+    in property <[PendingMatchRow]> pending-matches-model;
 
     callback system-selected(int);
     callback search-edited(string);
@@ -57,6 +67,8 @@ export component MainWindow inherits Window {
     callback browse-emulator-exec();
     callback save-launch-profile();
     callback stats-toggled();
+    callback scraper-toggled();
+    callback match-confirmed(int, string);
 
     VerticalLayout {
         padding: 12px;
@@ -86,9 +98,16 @@ export component MainWindow inherits Window {
                     stats-toggled();
                 }
             }
+
+            Button {
+                text: "Scraper";
+                clicked => {
+                    scraper-toggled();
+                }
+            }
         }
 
-        if !show-stats : HorizontalLayout {
+        if !show-stats && !show-scraper : HorizontalLayout {
             spacing: 12px;
 
             VerticalLayout {
@@ -272,6 +291,51 @@ export component MainWindow inherits Window {
                             text: row.subtitle;
                             color: Palette.text-dim;
                             font-size: 11px;
+                        }
+                    }
+                }
+            }
+        }
+
+        if show-scraper : VerticalLayout {
+            spacing: 8px;
+
+            Text {
+                text: "Pending scraper matches";
+                font-size: 16px;
+                color: Palette.text-dim;
+            }
+
+            ListView {
+                for row in pending-matches-model: Rectangle {
+                    height: 40px;
+
+                    HorizontalLayout {
+                        padding-left: 4px;
+                        spacing: 8px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            alignment: center;
+
+                            Text {
+                                text: row.name;
+                                color: Palette.text;
+                                font-size: 13px;
+                            }
+
+                            Text {
+                                text: row.provider-id + " — " + row.confidence + " confidence — #" + row.external-id;
+                                color: Palette.text-dim;
+                                font-size: 11px;
+                            }
+                        }
+
+                        Button {
+                            text: "Confirm";
+                            clicked => {
+                                match-confirmed(row.game-id, row.provider-id);
+                            }
                         }
                     }
                 }

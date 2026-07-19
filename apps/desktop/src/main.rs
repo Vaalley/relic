@@ -87,11 +87,17 @@ fn main() -> Result<(), slint::PlatformError> {
 
     window.set_status_line(format!("core {} — {}", engine.version(), db_path.display()).into());
 
+    let mut scraper_conn = rusqlite::Connection::open(&db_path)
+        .expect("opening the scraper connection should not fail");
+    relic_scraper::migrate(&mut scraper_conn).expect("scraper migration should not fail");
+    let scraper_conn = Rc::new(RefCell::new(scraper_conn));
+
     let engine = Rc::new(RefCell::new(engine));
     let system_slugs: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
     let current_system: Rc<Cell<usize>> = Rc::new(Cell::new(0));
     let current_games: Rc<RefCell<Vec<GameRow>>> = Rc::new(RefCell::new(Vec::new()));
     let show_stats: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+    let show_scraper: Rc<Cell<bool>> = Rc::new(Cell::new(false));
 
     let refresh_games = {
         let window_weak = window.as_weak();
@@ -330,6 +336,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let window_weak = window.as_weak();
         let engine = Rc::clone(&engine);
         let show_stats = Rc::clone(&show_stats);
+        let show_scraper = Rc::clone(&show_scraper);
         move || {
             let Some(window) = window_weak.upgrade() else {
                 return;
@@ -337,7 +344,10 @@ fn main() -> Result<(), slint::PlatformError> {
             let new_value = !show_stats.get();
             show_stats.set(new_value);
             window.set_show_stats(new_value);
-            if !new_value {
+            if new_value {
+                show_scraper.set(false);
+                window.set_show_scraper(false);
+            } else {
                 return;
             }
 
@@ -375,6 +385,70 @@ fn main() -> Result<(), slint::PlatformError> {
             window.set_recent_model(ModelRc::new(VecModel::from(recent_rows)));
             window.set_most_played_model(ModelRc::new(VecModel::from(most_played_rows)));
             window.set_stats_summary(summary.into());
+        }
+    });
+
+    let refresh_pending_matches = {
+        let window_weak = window.as_weak();
+        let engine = Rc::clone(&engine);
+        let scraper_conn = Rc::clone(&scraper_conn);
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let conn = scraper_conn.borrow();
+            let pending = relic_scraper::pending_matches(&conn).unwrap_or_default();
+            drop(conn);
+            let games = engine.borrow().query_games(None, None).unwrap_or_default();
+            let rows: Vec<PendingMatchRow> = pending
+                .iter()
+                .map(|p| {
+                    let name = games
+                        .iter()
+                        .find(|g| g.id == p.game_id)
+                        .map(|g| g.name.clone())
+                        .unwrap_or_else(|| format!("game #{}", p.game_id));
+                    PendingMatchRow {
+                        game_id: p.game_id as i32,
+                        name: name.into(),
+                        provider_id: p.provider_id.clone().into(),
+                        confidence: p.confidence.as_str().into(),
+                        external_id: p.external_id.clone().into(),
+                    }
+                })
+                .collect();
+            window.set_pending_matches_model(ModelRc::new(VecModel::from(rows)));
+        }
+    };
+
+    window.on_scraper_toggled({
+        let window_weak = window.as_weak();
+        let show_stats = Rc::clone(&show_stats);
+        let show_scraper = Rc::clone(&show_scraper);
+        let refresh_pending_matches = refresh_pending_matches.clone();
+        move || {
+            let Some(window) = window_weak.upgrade() else {
+                return;
+            };
+            let new_value = !show_scraper.get();
+            show_scraper.set(new_value);
+            window.set_show_scraper(new_value);
+            if new_value {
+                show_stats.set(false);
+                window.set_show_stats(false);
+                refresh_pending_matches();
+            }
+        }
+    });
+
+    window.on_match_confirmed({
+        let scraper_conn = Rc::clone(&scraper_conn);
+        let refresh_pending_matches = refresh_pending_matches.clone();
+        move |game_id, provider_id| {
+            let conn = scraper_conn.borrow();
+            let _ = relic_scraper::confirm_match(&conn, game_id as i64, provider_id.as_str());
+            drop(conn);
+            refresh_pending_matches();
         }
     });
 

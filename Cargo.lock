@@ -4703,8 +4703,10 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "relic-core",
+ "relic-scraper",
  "relic-themes",
  "rfd",
+ "rusqlite",
  "slint",
  "slint-build",
 ]
