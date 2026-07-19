@@ -85,6 +85,14 @@ pub struct DatImportStats {
     pub unmatched: u64,
 }
 
+#[derive(uniffi::Record)]
+pub struct PendingMatchInfo {
+    pub game_id: i64,
+    pub provider_id: String,
+    pub external_id: String,
+    pub confidence: String,
+}
+
 /// Implemented on the foreign side (Kotlin/Swift) to receive engine events.
 #[uniffi::export(callback_interface)]
 pub trait EventListener: Send + Sync {
@@ -95,6 +103,13 @@ pub trait EventListener: Send + Sync {
 #[derive(uniffi::Object)]
 pub struct RelicEngine {
     inner: Mutex<Engine>,
+    /// A second connection to the same db file, owned by `relic-scraper`'s
+    /// module tables (versioned independently via
+    /// `relic_core::db::apply_module_migrations`) — the same pattern
+    /// `apps/desktop` uses directly since it links `relic-core`/
+    /// `relic-scraper` natively; this crate needs its own connection because
+    /// `Engine` doesn't expose its internal one.
+    scraper_conn: Mutex<rusqlite::Connection>,
 }
 
 impl RelicEngine {
@@ -105,6 +120,14 @@ impl RelicEngine {
         let mut guard = self.inner.lock().map_err(|_| RelicError::Poisoned)?;
         f(&mut guard).map_err(RelicError::from)
     }
+
+    fn with_scraper<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T>,
+    ) -> Result<T, RelicError> {
+        let guard = self.scraper_conn.lock().map_err(|_| RelicError::Poisoned)?;
+        f(&guard).map_err(|e| RelicError::Engine { msg: e.to_string() })
+    }
 }
 
 #[uniffi::export]
@@ -113,8 +136,13 @@ impl RelicEngine {
     #[uniffi::constructor]
     pub fn open(db_path: String) -> Result<std::sync::Arc<Self>, RelicError> {
         let engine = Engine::open(std::path::Path::new(&db_path))?;
+        let mut scraper_conn = rusqlite::Connection::open(&db_path)
+            .map_err(|e| RelicError::Engine { msg: e.to_string() })?;
+        relic_scraper::migrate(&mut scraper_conn)
+            .map_err(|e| RelicError::Engine { msg: e.to_string() })?;
         Ok(std::sync::Arc::new(Self {
             inner: Mutex::new(engine),
+            scraper_conn: Mutex::new(scraper_conn),
         }))
     }
 
@@ -351,6 +379,31 @@ impl RelicEngine {
     pub fn export_gamelists(&self, library_id: i64) -> Result<u64, RelicError> {
         self.with_engine(|e| e.export_gamelists(library_id))
     }
+
+    /// Scraper matches not yet confirmed by the user (PLAN.md §7.1
+    /// "confirmation UI for low-confidence matches"). Populated by running
+    /// `relic-cli scrape` against this same db file.
+    pub fn scraper_pending_matches(&self) -> Result<Vec<PendingMatchInfo>, RelicError> {
+        self.with_scraper(|conn| {
+            Ok(relic_scraper::pending_matches(conn)?
+                .into_iter()
+                .map(|p| PendingMatchInfo {
+                    game_id: p.game_id,
+                    provider_id: p.provider_id,
+                    external_id: p.external_id,
+                    confidence: p.confidence.as_str().to_string(),
+                })
+                .collect())
+        })
+    }
+
+    pub fn scraper_confirm_match(
+        &self,
+        game_id: i64,
+        provider_id: String,
+    ) -> Result<(), RelicError> {
+        self.with_scraper(|conn| relic_scraper::confirm_match(conn, game_id, &provider_id))
+    }
 }
 
 /// Resolved design tokens (PLAN.md §6 layer 1) for a shell to apply, so
@@ -463,5 +516,34 @@ mod tests {
 
         // Gamelist export should succeed on the scanned library.
         assert!(engine.export_gamelists(lib).is_ok());
+
+        // Scraper surface: relic-cli's `scrape` is what actually populates
+        // matches (via a raw connection to the same db file, same as here);
+        // this exercises the read/confirm side the FFI exposes.
+        assert!(engine.scraper_pending_matches().unwrap().is_empty());
+        {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            relic_scraper::save_match(
+                &conn,
+                games[0].id,
+                &relic_scraper::MatchResult {
+                    provider_id: "screenscraper",
+                    candidate: relic_scraper::Candidate {
+                        external_id: "42".into(),
+                        name: "Game".into(),
+                        system_slug: "snes".into(),
+                    },
+                    confidence: relic_scraper::Confidence::Low,
+                },
+            )
+            .unwrap();
+        }
+        let pending = engine.scraper_pending_matches().unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].provider_id, "screenscraper");
+        engine
+            .scraper_confirm_match(games[0].id, "screenscraper".into())
+            .unwrap();
+        assert!(engine.scraper_pending_matches().unwrap().is_empty());
     }
 }

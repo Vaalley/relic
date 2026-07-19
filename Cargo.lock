@@ -4716,7 +4716,9 @@ name = "relic-ffi"
 version = "0.1.0"
 dependencies = [
  "relic-core",
+ "relic-scraper",
  "relic-themes",
+ "rusqlite",
  "tempfile",
  "thiserror 2.0.18",
  "uniffi",
