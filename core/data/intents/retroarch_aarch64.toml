@@ -1,0 +1,51 @@
+# Relic Android intent template — RetroArch (AArch64 nightly channel).
+# Spec: docs/android-intents.md. Status: Draft, Phase 3.
+#
+# RetroArch ships two mutually-exclusive Play Store / nightly packages on
+# arm64 devices: "com.retroarch" (stable) and "com.retroarch.aarch64"
+# (AArch64-optimized nightly). Interface is identical to retroarch.toml — a
+# separate file is shipped rather than a per_system override because the
+# difference is the package alias, not the system, same pattern as
+# ppsspp.toml / ppsspp_gold.toml / ppsspp_legacy.toml for mutually-exclusive
+# package variants. The Android resolver tries both templates in priority
+# order (aarch64 first, matching the pre-resolver alpha launcher's
+# `PACKAGES = listOf("com.retroarch.aarch64", "com.retroarch")`) and fires
+# whichever is installed.
+
+id = "retroarch_aarch64"
+display_name = "RetroArch (AArch64)"
+package = "com.retroarch.aarch64"
+activity = "com.retroarch.browser.retroactivity.RetroActivityFuture"
+action = "android.intent.action.MAIN"
+data_mode = "extra"
+data_extra_name = "ROM"
+systems = ["*"]  # All libretro-supported systems; {core} derives the actual core per system.
+min_version_code = 1  # UNVERIFIED - needs device testing: lowest versionCode known to expose RetroActivityFuture.
+
+flags = [
+  "FLAG_ACTIVITY_NEW_TASK",
+  "FLAG_ACTIVITY_CLEAR_TOP",
+]
+
+[[extras]]
+name = "ROM"
+type = "string"
+value = "{rom_uri}"
+
+[[extras]]
+name = "LIBRETRO"
+type = "string"
+value = "{core}"
+
+[[extras]]
+name = "CONFIGFILE"
+type = "string"
+value = ""  # Empty string => RetroArch's default config. Override via per_system if a core needs a specific config.
+
+[[extras]]
+name = "QUITFOCUS"
+type = "bool"
+value = "true"  # UNVERIFIED - needs device testing: QUITFOCUS behavior has varied across RetroArch builds.
+
+# No per_system overrides: {core} already derives the libretro core from the
+# system registry's default_core, so one extras block covers every system.

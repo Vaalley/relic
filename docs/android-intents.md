@@ -92,7 +92,8 @@ Shipped seed set:
 
 | File | Emulator | Targets |
 |---|---|---|
-| `retroarch.toml` | RetroArch | All libretro-supported systems (core chosen per system) |
+| `retroarch.toml` | RetroArch (stable) | All libretro-supported systems (core chosen per system) |
+| `retroarch_aarch64.toml` | RetroArch (AArch64 nightly, `com.retroarch.aarch64`) | Same as `retroarch.toml`; mutually exclusive package alias |
 | `ppsspp.toml` | PPSSPP (free) | `psp` |
 | `ppsspp_gold.toml` | PPSSPP Gold (paid) | `psp` |
 | `ppsspp_legacy.toml` | PPSSPP Legacy (pre-scoped-storage) | `psp` |

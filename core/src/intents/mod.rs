@@ -16,6 +16,10 @@ use crate::{Error, Result};
 
 const BUILTIN: &[(&str, &str)] = &[
     (
+        "retroarch_aarch64",
+        include_str!("../../data/intents/retroarch_aarch64.toml"),
+    ),
+    (
         "retroarch",
         include_str!("../../data/intents/retroarch.toml"),
     ),
@@ -68,6 +72,11 @@ const KNOWN_FLAGS: &[&str] = &[
 
 /// Forbidden by the security model (docs/android-intents.md §5).
 const FORBIDDEN_FLAG: &str = "FLAG_GRANT_WRITE_URI_PERMISSION";
+
+/// Template ids allowed to use the `{core}` placeholder (docs/android-intents.md
+/// §4.3): libretro frontends only. Two RetroArch package aliases are shipped
+/// (stable + AArch64 nightly) but share one libretro interface.
+const LIBRETRO_FRONTEND_IDS: &[&str] = &["retroarch", "retroarch_aarch64"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -252,11 +261,11 @@ pub fn validate(
                     extra.name
                 ));
             }
-            // 6. {core} is RetroArch-only.
-            if placeholder == "core" && template.id != "retroarch" {
+            // 6. {core} is libretro-frontend-only.
+            if placeholder == "core" && !LIBRETRO_FRONTEND_IDS.contains(&template.id.as_str()) {
                 errors.push(format!(
-                    "extra '{}' references {{core}}, but {{core}} is only valid in the \
-                     'retroarch' template",
+                    "extra '{}' references {{core}}, but {{core}} is only valid in a \
+                     libretro-frontend template ({LIBRETRO_FRONTEND_IDS:?})",
                     extra.name
                 ));
             }

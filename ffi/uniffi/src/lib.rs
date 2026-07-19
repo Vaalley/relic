@@ -656,8 +656,9 @@ mod tests {
         let psx = intent_templates_for_system("psx".to_string());
         assert!(psx.iter().any(|t| t.id == "retroarch"));
         assert!(psx.iter().any(|t| t.id == "duckstation"));
-        // RetroArch (first in BUILTIN) should come before standalones.
-        assert_eq!(psx[0].id, "retroarch");
+        // RetroArch (either package alias, both first in BUILTIN) should
+        // come before standalones.
+        assert!(psx[0].id.starts_with("retroarch"));
     }
 
     #[test]
